@@ -5,8 +5,9 @@ Vibe Coding Blog Automation
 1. 최신 vibe coding 뉴스 수집 (Claude 웹서치)
 2. 교육용 블로그 글 작성 (Claude API)
 3. SEO 제목/메타태그 생성
-4. 썸네일 이미지 생성 (Gemini REST API - 무료)
-5. Google Blogger 자동 포스팅
+4. 썸네일 이미지 프롬프트 — 글 내용 기반으로 생성 (안정적)
+5. Gemini REST API로 이미지 생성 (무료)
+6. Google Blogger 자동 포스팅
 """
 
 import os
@@ -22,7 +23,7 @@ import requests
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-# ── 로깅 설정 ───────────────────────────────────────────────────────────────
+# ── 로깅 설정 ────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -30,25 +31,25 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# ── 환경변수 ─────────────────────────────────────────────────────────────────
+# ── 환경변수 ──────────────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY  = os.environ["ANTHROPIC_API_KEY"]
 GEMINI_API_KEY     = os.environ["GEMINI_API_KEY"]
 BLOGGER_BLOG_ID    = os.environ["BLOGGER_BLOG_ID"]
 GOOGLE_CREDENTIALS = os.environ["GOOGLE_CREDENTIALS_JSON"]
 
-# ── 클라이언트 초기화 ────────────────────────────────────────────────────────
+# ── 클라이언트 초기화 ─────────────────────────────────────────────────────────
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
 # 1단계: 최신 뉴스 수집
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
 def collect_latest_news() -> dict:
     """Claude 웹서치로 오늘의 vibe coding 최신 정보 수집"""
     log.info("📡 최신 뉴스 수집 시작...")
 
     today = datetime.now().strftime("%Y년 %m월 %d일")
-    year  = datetime.now().year  # 자동으로 현재 연도 사용
+    year  = datetime.now().year
 
     search_topics = [
         f"vibe coding 최신 트렌드 {year}",
@@ -78,7 +79,7 @@ def collect_latest_news() -> dict:
             )
             if text.strip():
                 collected.append({"topic": topic, "summary": text})
-            time.sleep(3)  # API 레이트 리밋 방지
+            time.sleep(3)
         except Exception as e:
             log.warning(f"  ⚠️ '{topic}' 검색 실패: {e}")
 
@@ -86,9 +87,9 @@ def collect_latest_news() -> dict:
     return {"date": today, "items": collected}
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
 # 2단계: 블로그 글 작성 (Claude API)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
 def generate_blog_post(news_data: dict) -> dict:
     """수집된 뉴스를 바탕으로 교육용 블로그 글 생성"""
     log.info("✍️  블로그 글 작성 시작...")
@@ -132,8 +133,7 @@ def generate_blog_post(news_data: dict) -> dict:
   "meta_description": "검색엔진 클릭률 높은 메타 디스크립션 (150자 이내)",
   "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
   "slug": "url-friendly-slug-in-english",
-  "content_html": "완성된 블로그 글 HTML (h2, h3, p, ul, li, strong 태그 사용)",
-  "image_prompt": "Gemini로 생성할 썸네일 이미지 프롬프트 (영문, 블로그 주제에 맞는 미래적/친근한 이미지)"
+  "content_html": "완성된 블로그 글 HTML (h2, h3, p, ul, li, strong 태그 사용)"
 }}
 """
 
@@ -155,9 +155,9 @@ def generate_blog_post(news_data: dict) -> dict:
     return post_data
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
 # 3단계: SEO 최적화 제목 선택
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
 def select_best_title(post_data: dict) -> str:
     """후보 제목 중 SEO/CTR 관점에서 최적 제목 선택"""
     log.info("🔍 SEO 제목 최적화...")
@@ -183,9 +183,46 @@ def select_best_title(post_data: dict) -> str:
     return title
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 4단계: 썸네일 이미지 생성 (Gemini REST API — 무료)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
+# 4단계: 글 내용 기반으로 이미지 프롬프트 생성 (핵심 변경!)
+# ═════════════════════════════════════════════════════════════════════════════
+def generate_image_prompt(title: str, post_data: dict) -> str:
+    """
+    뉴스 수집 결과와 무관하게 완성된 글 제목과 내용을 기반으로
+    이미지 프롬프트를 생성 — 항상 안정적으로 동작
+    """
+    log.info("🖼️  이미지 프롬프트 생성 중... (글 내용 기반)")
+
+    tags = ", ".join(post_data.get("tags", []))
+
+    response = claude.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=300,
+        messages=[{
+            "role": "user",
+            "content": (
+                f"다음 블로그 글의 썸네일 이미지를 위한 영문 프롬프트를 만들어줘.\n\n"
+                f"제목: {title}\n"
+                f"태그: {tags}\n\n"
+                "조건:\n"
+                "- 영문으로만 작성\n"
+                "- 미래적이고 친근한 테크 일러스트 스타일\n"
+                "- 텍스트/글자 없음\n"
+                "- 16:9 블로그 썸네일용\n"
+                "- 50단어 이내\n"
+                "프롬프트만 출력 (다른 설명 없이):"
+            ),
+        }],
+    )
+
+    prompt = response.content[0].text.strip()
+    log.info(f"  ✅ 이미지 프롬프트: {prompt[:60]}...")
+    return prompt
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 5단계: 썸네일 이미지 생성 (Gemini REST API — 무료)
+# ═════════════════════════════════════════════════════════════════════════════
 def generate_thumbnail(image_prompt: str) -> str:
     """Gemini REST API로 썸네일 이미지 생성 (무료, 하루 500장)"""
     log.info("🎨 썸네일 이미지 생성 중... (Gemini / 무료)")
@@ -223,9 +260,9 @@ def generate_thumbnail(image_prompt: str) -> str:
         return ""
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 5단계: Google Blogger 포스팅
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
+# 6단계: Google Blogger 포스팅
+# ═════════════════════════════════════════════════════════════════════════════
 def get_blogger_service():
     """Google Blogger API 서비스 객체 생성"""
     creds_info = json.loads(GOOGLE_CREDENTIALS)
@@ -291,9 +328,9 @@ def post_to_blogger(title: str, post_data: dict, image_data: str) -> str:
     return post_url
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
 # 메인 실행
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
 def main():
     log.info("=" * 60)
     log.info("🚀 Vibe Coding Blog 자동화 시작")
@@ -301,11 +338,23 @@ def main():
     log.info("=" * 60)
 
     try:
-        news_data  = collect_latest_news()
-        post_data  = generate_blog_post(news_data)
+        # 1. 뉴스 수집 (실패해도 계속 진행)
+        news_data = collect_latest_news()
+
+        # 2. 블로그 글 작성
+        post_data = generate_blog_post(news_data)
+
+        # 3. 최적 제목 선택
         best_title = select_best_title(post_data)
-        image_b64  = generate_thumbnail(post_data.get("image_prompt", ""))
-        post_url   = post_to_blogger(best_title, post_data, image_b64)
+
+        # 4. 글 내용 기반으로 이미지 프롬프트 생성 (뉴스 수집과 무관!)
+        image_prompt = generate_image_prompt(best_title, post_data)
+
+        # 5. 이미지 생성
+        image_b64 = generate_thumbnail(image_prompt)
+
+        # 6. 블로그 포스팅
+        post_url = post_to_blogger(best_title, post_data, image_b64)
 
         log.info("=" * 60)
         log.info("🎉 전체 파이프라인 완료!")
