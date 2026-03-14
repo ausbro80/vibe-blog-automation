@@ -1,0 +1,19 @@
+# 비밀 파일 — 절대 커밋 금지
+client_secret.json
+google_credentials.json
+.env
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
