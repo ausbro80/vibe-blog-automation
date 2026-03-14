@@ -2,11 +2,11 @@
 Vibe Coding Blog Automation
 ────────────────────────────
 매일 자동으로:
-1. 최신 vibe coding 뉴스 수집 (Claude 웹서치)
+1. 최신 vibe coding 뉴스 수집 (Claude 웹서치 - 견고한 파싱)
 2. 교육용 블로그 글 작성 (Claude API)
 3. SEO 제목/메타태그 생성
-4. 썸네일 이미지 프롬프트 — 글 내용 기반으로 생성 (안정적)
-5. Gemini REST API로 이미지 생성 (무료)
+4. 글 내용 기반 이미지 프롬프트 생성 (뉴스 수집 실패와 무관)
+5. Gemini imagen-3.0으로 이미지 생성 (무료)
 6. Google Blogger 자동 포스팅
 """
 
@@ -42,8 +42,24 @@ claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 1단계: 최신 뉴스 수집
+# 1단계: 최신 뉴스 수집 (견고한 파싱)
 # ═════════════════════════════════════════════════════════════════════════════
+def extract_text_from_response(response) -> str:
+    """Claude 응답에서 텍스트 안전하게 추출 — None 방지"""
+    texts = []
+    for block in response.content:
+        # text 속성이 있고 실제 문자열인 경우만 추가
+        if hasattr(block, "text") and isinstance(block.text, str) and block.text.strip():
+            texts.append(block.text.strip())
+        # tool_result 블록 안의 텍스트도 추출
+        elif hasattr(block, "type") and block.type == "tool_result":
+            if hasattr(block, "content"):
+                for sub in block.content:
+                    if hasattr(sub, "text") and isinstance(sub.text, str):
+                        texts.append(sub.text.strip())
+    return "\n".join(texts)
+
+
 def collect_latest_news() -> dict:
     """Claude 웹서치로 오늘의 vibe coding 최신 정보 수집"""
     log.info("📡 최신 뉴스 수집 시작...")
@@ -53,9 +69,9 @@ def collect_latest_news() -> dict:
 
     search_topics = [
         f"vibe coding 최신 트렌드 {year}",
-        f"Claude Code AI 코딩 도구 업데이트 {year}",
-        f"Cursor Windsurf AI IDE 비교 {year}",
-        f"AI 코딩 도구 초보자 입문 {year}",
+        f"Claude Code AI 코딩 도구 {year}",
+        f"Cursor Windsurf AI 코딩 도구 비교 {year}",
+        f"비개발자 AI 앱 만들기 {year}",
     ]
 
     collected = []
@@ -63,25 +79,33 @@ def collect_latest_news() -> dict:
         try:
             response = claude.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=1500,
+                max_tokens=2000,
                 tools=[{"type": "web_search_20250305", "name": "web_search"}],
+                tool_choice={"type": "auto"},
                 messages=[{
                     "role": "user",
                     "content": (
-                        f"오늘({today}) 기준으로 '{topic}'에 대한 최신 정보를 검색해줘. "
+                        f"오늘({today}) 기준으로 '{topic}'을 검색하고 "
                         "핵심 내용 3가지를 한국어로 요약해줘. "
-                        "각 항목은 제목과 2~3문장 설명으로 구성해줘."
+                        "반드시 검색 결과를 바탕으로 작성하고, "
+                        "각 항목은 제목과 2~3문장으로 구성해줘."
                     ),
                 }],
             )
-            text = "".join(
-                block.text for block in response.content if hasattr(block, "text")
-            )
-            if text.strip():
+
+            text = extract_text_from_response(response)
+
+            if text:
                 collected.append({"topic": topic, "summary": text})
-            time.sleep(3)
+                log.info(f"  ✅ '{topic}' 수집 완료 ({len(text)}자)")
+            else:
+                log.warning(f"  ⚠️ '{topic}' 빈 응답")
+
+            time.sleep(5)  # 레이트 리밋 방지 (충분히 여유 있게)
+
         except Exception as e:
             log.warning(f"  ⚠️ '{topic}' 검색 실패: {e}")
+            time.sleep(3)
 
     log.info(f"  ✅ {len(collected)}개 주제 수집 완료")
     return {"date": today, "items": collected}
@@ -96,9 +120,19 @@ def generate_blog_post(news_data: dict) -> dict:
 
     year = datetime.now().year
 
-    news_summary = "\n\n".join(
-        f"[{item['topic']}]\n{item['summary']}" for item in news_data["items"]
-    ) if news_data["items"] else f"{year}년 최신 AI 코딩 트렌드 정보"
+    if news_data["items"]:
+        news_summary = "\n\n".join(
+            f"[{item['topic']}]\n{item['summary']}"
+            for item in news_data["items"]
+        )
+        log.info(f"  뉴스 {len(news_data['items'])}개 활용하여 글 작성")
+    else:
+        news_summary = (
+            f"{year}년 현재 AI 코딩 도구 시장은 빠르게 성장하고 있으며, "
+            "Claude Code, Cursor, Windsurf, Lovable 등의 도구들이 "
+            "비개발자들도 쉽게 앱을 만들 수 있도록 돕고 있습니다."
+        )
+        log.info("  뉴스 수집 없음 — 기본 내용으로 글 작성")
 
     prompt = f"""
 당신은 비개발자들에게 AI 코딩 도구(vibe coding)를 쉽게 설명하는 전문 블로그 작가입니다.
@@ -111,29 +145,29 @@ def generate_blog_post(news_data: dict) -> dict:
 - 독자: 코딩을 전혀 모르지만 AI로 앱/웹사이트 만들고 싶은 일반인
 - 어조: 친근하고 쉬운 말투, 전문용어는 반드시 풀어서 설명
 - 분량: 2,500~3,000자
-- 반드시 {year}년 현재 기준으로 작성 (과거 연도 언급 금지)
+- 반드시 {year}년 현재 기준으로 작성 (다른 연도 언급 금지)
 - 구조:
   1. 흥미로운 도입부 (독자의 공감 유도)
   2. Vibe Coding이란? (쉬운 정의)
-  3. 오늘의 핵심 뉴스/트렌드 (최신 정보 활용)
-  4. 주요 도구 소개 (Claude Code, Cursor, Windsurf 등)
+  3. 오늘의 핵심 뉴스/트렌드
+  4. 주요 도구 소개 (Claude Code, Cursor, Windsurf, Lovable)
   5. 초보자를 위한 시작 방법 (단계별)
   6. 마무리 + 다음 글 예고
 
 ## 출력 형식 (JSON)
-반드시 아래 JSON만 출력하고 다른 텍스트 없이:
+반드시 아래 JSON만 출력하고 마크다운 코드블록 없이:
 {{
   "title_candidates": [
-    "{year}년 기준 SEO 최적화된 제목 후보 5개 (클릭률 높은 형태로)",
-    "예: 코딩 몰라도 앱 만드는 법? Vibe Coding 완전 정복",
-    "예: {year}년 AI 코딩 도구 TOP 3 — 비개발자도 하루 만에 앱 완성",
-    "예: ChatGPT로 앱 만들기? 이제 Claude Code가 대세인 이유",
-    "예: 직장인이 퇴근 후 2시간으로 앱 만든 실제 후기"
+    "{year}년 기준 SEO 제목 후보 1",
+    "{year}년 기준 SEO 제목 후보 2",
+    "{year}년 기준 SEO 제목 후보 3",
+    "{year}년 기준 SEO 제목 후보 4",
+    "{year}년 기준 SEO 제목 후보 5"
   ],
-  "meta_description": "검색엔진 클릭률 높은 메타 디스크립션 (150자 이내)",
+  "meta_description": "메타 디스크립션 150자 이내",
   "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
   "slug": "url-friendly-slug-in-english",
-  "content_html": "완성된 블로그 글 HTML (h2, h3, p, ul, li, strong 태그 사용)"
+  "content_html": "완성된 블로그 글 HTML"
 }}
 """
 
@@ -144,13 +178,18 @@ def generate_blog_post(news_data: dict) -> dict:
     )
 
     raw = response.content[0].text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    raw = raw.strip()
+    # JSON 펜스 제거
+    if "```" in raw:
+        parts = raw.split("```")
+        for part in parts:
+            part = part.strip()
+            if part.startswith("json"):
+                part = part[4:].strip()
+            if part.startswith("{"):
+                raw = part
+                break
 
-    post_data = json.loads(raw)
+    post_data = json.loads(raw.strip())
     log.info("  ✅ 블로그 글 생성 완료")
     return post_data
 
@@ -172,8 +211,9 @@ def select_best_title(post_data: dict) -> str:
         messages=[{
             "role": "user",
             "content": (
-                f"다음 블로그 제목 후보들 중 한국 구글 검색 SEO와 클릭률(CTR) 관점에서 "
-                f"가장 효과적인 제목 1개만 골라서 그 제목만 출력해줘 (번호 없이):\n\n{candidates}"
+                f"다음 블로그 제목 후보들 중 한국 구글 검색 SEO와 "
+                f"클릭률(CTR) 관점에서 가장 효과적인 제목 1개만 골라서 "
+                f"그 제목만 출력해줘 (번호 없이):\n\n{candidates}"
             ),
         }],
     )
@@ -184,76 +224,73 @@ def select_best_title(post_data: dict) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 4단계: 글 내용 기반으로 이미지 프롬프트 생성 (핵심 변경!)
+# 4단계: 글 내용 기반 이미지 프롬프트 생성 (뉴스 수집과 완전 독립)
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_image_prompt(title: str, post_data: dict) -> str:
-    """
-    뉴스 수집 결과와 무관하게 완성된 글 제목과 내용을 기반으로
-    이미지 프롬프트를 생성 — 항상 안정적으로 동작
-    """
+    """완성된 글 제목과 태그를 기반으로 이미지 프롬프트 생성"""
     log.info("🖼️  이미지 프롬프트 생성 중... (글 내용 기반)")
 
     tags = ", ".join(post_data.get("tags", []))
 
     response = claude.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=300,
+        max_tokens=200,
         messages=[{
             "role": "user",
             "content": (
-                f"다음 블로그 글의 썸네일 이미지를 위한 영문 프롬프트를 만들어줘.\n\n"
+                f"블로그 썸네일용 영문 이미지 프롬프트를 만들어줘.\n\n"
                 f"제목: {title}\n"
                 f"태그: {tags}\n\n"
                 "조건:\n"
-                "- 영문으로만 작성\n"
-                "- 미래적이고 친근한 테크 일러스트 스타일\n"
-                "- 텍스트/글자 없음\n"
-                "- 16:9 블로그 썸네일용\n"
-                "- 50단어 이내\n"
-                "프롬프트만 출력 (다른 설명 없이):"
+                "- 영문만, 50단어 이내\n"
+                "- 밝고 미래적인 테크 일러스트 스타일\n"
+                "- 사람이 AI 도구로 쉽게 앱을 만드는 느낌\n"
+                "- 텍스트/글자 포함 금지\n"
+                "프롬프트만 출력:"
             ),
         }],
     )
 
     prompt = response.content[0].text.strip()
-    log.info(f"  ✅ 이미지 프롬프트: {prompt[:60]}...")
+    log.info(f"  ✅ 프롬프트 생성: {prompt[:60]}...")
     return prompt
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 5단계: 썸네일 이미지 생성 (Gemini REST API — 무료)
+# 5단계: 썸네일 이미지 생성 (Gemini imagen-3.0 — 무료)
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_thumbnail(image_prompt: str) -> str:
-    """Gemini REST API로 썸네일 이미지 생성 (무료, 하루 500장)"""
-    log.info("🎨 썸네일 이미지 생성 중... (Gemini / 무료)")
+    """Gemini imagen-3.0으로 썸네일 이미지 생성"""
+    log.info("🎨 썸네일 이미지 생성 중... (Gemini imagen-3.0)")
 
     enhanced_prompt = (
-        f"{image_prompt}. "
-        "Modern flat illustration style, vibrant colors, "
-        "blog thumbnail 16:9 format, no text overlay, "
-        "professional clean design, tech aesthetic, high quality"
+        f"{image_prompt}, "
+        "modern flat illustration, vibrant colors, "
+        "16:9 blog thumbnail, no text, no letters, "
+        "professional tech design, high quality"
     )
 
     try:
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-2.0-flash-exp:generateContent?key={GEMINI_API_KEY}"
+            f"imagen-3.0-generate-002:predict?key={GEMINI_API_KEY}"
         )
         payload = {
-            "contents": [{"parts": [{"text": enhanced_prompt}]}],
-            "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]},
+            "instances": [{"prompt": enhanced_prompt}],
+            "parameters": {
+                "sampleCount": 1,
+                "aspectRatio": "16:9",
+                "safetyFilterLevel": "block_few",
+                "personGeneration": "dont_allow",
+            },
         }
         resp = requests.post(url, json=payload, timeout=60)
         resp.raise_for_status()
         data = resp.json()
 
-        for part in data["candidates"][0]["content"]["parts"]:
-            if "inlineData" in part:
-                b64 = part["inlineData"]["data"]
-                log.info("  ✅ 이미지 생성 완료 (Gemini 무료)")
-                return b64
-
-        raise ValueError("이미지 데이터 없음")
+        b64 = data["predictions"][0]["bytesBase64Encoded"]
+        log.info("  ✅ 이미지 생성 완료 (imagen-3.0)")
+        return b64
 
     except Exception as e:
         log.warning(f"  ⚠️ 이미지 생성 실패 ({e}), 플레이스홀더 사용")
@@ -277,7 +314,6 @@ def get_blogger_service():
 
 
 def build_image_src(b64_image: str) -> str:
-    """이미지 data URI 생성 (없으면 플레이스홀더)"""
     if not b64_image:
         return "https://placehold.co/1200x630/6366f1/ffffff?text=Vibe+Coding+School"
     return f"data:image/png;base64,{b64_image}"
@@ -347,7 +383,7 @@ def main():
         # 3. 최적 제목 선택
         best_title = select_best_title(post_data)
 
-        # 4. 글 내용 기반으로 이미지 프롬프트 생성 (뉴스 수집과 무관!)
+        # 4. 글 내용 기반 이미지 프롬프트 생성 (뉴스 수집과 완전 독립)
         image_prompt = generate_image_prompt(best_title, post_data)
 
         # 5. 이미지 생성
