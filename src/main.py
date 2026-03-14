@@ -1,9 +1,11 @@
 """
-바이브코딩 스쿨 (VIBE CODING School) — Blog Automation v3
+바이브코딩 스쿨 (VIBE CODING School) — Blog Automation v4
 ──────────────────────────────────────────────────────────
 3트랙 자동 포스팅:
-  아침 9시 → 📰 뉴스 트랙: X/트위터 AI 코딩 최신 소식
+  아침 9시 → 📰 뉴스 트랙: 오늘의 AI 코딩 최신 소식
   저녁 9시 → 📚 교육 트랙 OR 🌟 인물 트랙 (3일에 1번)
+
+핵심: 주제를 미리 정하지 않고 AI가 오늘의 웹 트렌드를 보고 스스로 결정
 """
 
 import os
@@ -33,110 +35,12 @@ GOOGLE_CREDENTIALS = os.environ["GOOGLE_CREDENTIALS_JSON"]
 
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-# ── 교육 트랙 주제 풀 (50개) ──────────────────────────────────────────────────
-EDU_TOPICS = [
-    ("Cursor AI 완전 정복",            "Cursor AI 설치 사용법 2026"),
-    ("Windsurf IDE 실전 리뷰",         "Windsurf IDE 사용후기 2026"),
-    ("Lovable로 웹앱 30분 완성",        "Lovable 웹앱 만들기 2026"),
-    ("Claude Code 실전 가이드",        "Claude Code 사용법 실전 2026"),
-    ("Replit Agent 앱 배포",           "Replit Agent 앱 배포 방법 2026"),
-    ("Bolt.new 솔직 후기",             "Bolt.new 사용후기 장단점 2026"),
-    ("v0 by Vercel UI 자동생성",       "v0 Vercel UI 생성 사용법 2026"),
-    ("GitHub Copilot 최신 기능",       "GitHub Copilot 업데이트 2026"),
-    ("Google Antigravity IDE",        "Google Antigravity IDE 사용법 2026"),
-    ("무료 AI 코딩 도구 추천",           "무료 AI 코딩 도구 추천 2026"),
-    ("코딩 0% 앱 만들기 첫걸음",         "비개발자 AI 앱 만들기 입문 2026"),
-    ("비개발자 첫 앱 출시 후기",          "비개발자 앱 출시 후기 2026"),
-    ("직장인 사이드프로젝트 앱",          "직장인 AI 코딩 사이드프로젝트 2026"),
-    ("소상공인 주문앱 만들기",           "소상공인 AI 주문앱 제작 2026"),
-    ("프리랜서 업무 자동화 앱",          "프리랜서 AI 자동화 앱 2026"),
-    ("인스타그램 스케줄러 앱",           "AI 코딩 SNS 자동화 앱 2026"),
-    ("가계부 앱 바이브코딩",             "AI 코딩 가계부 앱 만들기 2026"),
-    ("할일 관리 앱 만들기",             "AI 코딩 할일앱 제작 2026"),
-    ("예약 관리 앱 만들기",             "AI 코딩 예약앱 소상공인 2026"),
-    ("AI 챗봇 홈페이지에 붙이기",        "홈페이지 AI 챗봇 연동 2026"),
-    ("포트폴리오 사이트 1시간 완성",      "AI 코딩 포트폴리오 사이트 2026"),
-    ("쇼핑몰 만들기",                  "AI 코딩 온라인 쇼핑몰 제작 2026"),
-    ("앱 배포 완전 가이드",             "바이브코딩 앱 배포 방법 2026"),
-    ("로그인 기능 추가하기",             "AI 코딩 앱 로그인 회원가입 2026"),
-    ("결제 기능 연동하기",              "AI 코딩 앱 결제 기능 2026"),
-    ("바이브코딩 보안 주의사항",          "바이브코딩 앱 보안 취약점 2026"),
-    ("AI가 짠 코드 이해하는 법",         "AI 생성 코드 읽는 법 2026"),
-    ("오류 메시지 해결하는 법",          "바이브코딩 에러 해결 방법 2026"),
-    ("프롬프트 잘 쓰는 법",             "AI 코딩 프롬프트 작성법 2026"),
-    ("API 연결하기 쉬운 설명",           "바이브코딩 API 연동 방법 2026"),
-    ("반응형 디자인 만들기",             "AI 코딩 모바일 반응형 2026"),
-    ("SEO 최적화 사이트 만들기",         "AI 코딩 SEO 사이트 제작 2026"),
-    ("Claude Code vs Cursor 비교",    "Claude Code Cursor 비교 2026"),
-    ("바이브코딩으로 돈 버는 법",         "AI 코딩 수익화 방법 2026"),
-    ("앱스토어 출시 가이드",             "바이브코딩 앱 앱스토어 등록 2026"),
-    ("SaaS 창업 바이브코딩",           "비개발자 AI SaaS 창업 2026"),
-    ("AI 코딩 유료 vs 무료 플랜",        "AI 코딩 도구 유료 무료 비교 2026"),
-    ("한국어 지원 AI 코딩 도구",         "한국어 AI 코딩 도구 추천 2026"),
-    ("버전 관리 깃허브 입문",            "AI 코딩 초보 깃허브 사용법 2026"),
-    ("데이터베이스 연결하기",            "바이브코딩 데이터베이스 연동 2026"),
-    ("다국어 앱 만들기",               "AI 코딩 다국어 앱 제작 2026"),
-    ("앱 성능 최적화 팁",              "바이브코딩 앱 속도 최적화 2026"),
-    ("설문조사 앱 만들기",              "AI 코딩 설문 앱 제작 2026"),
-    ("블로그 자동화 앱",               "AI 코딩 블로그 자동화 2026"),
-    ("AI 코딩 실패 사례 교훈",          "바이브코딩 실패 이유 2026"),
-    ("비개발자의 시대 전망",             "비개발자 AI 코딩 미래 전망 2026"),
-    ("AI 코딩 교육 어디서 배우나",        "바이브코딩 교육 추천 2026"),
-    ("개발자와 비개발자 협업법",          "AI 코딩 개발자 비개발자 협업 2026"),
-    ("모바일 앱 vs 웹앱 선택",          "바이브코딩 모바일 웹앱 선택 기준 2026"),
-    ("AI 코딩 도구 선택 가이드",         "초보자 AI 코딩 도구 선택 방법 2026"),
-    ("2026 AI 코딩 트렌드 총정리",      "2026 AI 코딩 트렌드 전망"),
-]
-
-# ── 인물 트랙 풀 ──────────────────────────────────────────────────────────────
-PEOPLE_TOPICS = [
-    ("Andrej Karpathy",   "Andrej Karpathy vibe coding 2026 latest project"),
-    ("Pieter Levels",     "Pieter Levels levelsio 2026 new saas project"),
-    ("Marc Lou",          "Marc Lou marclou 2026 new app launch"),
-    ("Sam Altman",        "Sam Altman OpenAI AI coding 2026"),
-    ("Greg Isenberg",     "Greg Isenberg AI startup vibe coding 2026"),
-    ("Michael Truell",    "Michael Truell Cursor CEO 2026 update"),
-    ("Dario Amodei",      "Dario Amodei Anthropic Claude Code 2026"),
-    ("Lex Fridman",       "Lex Fridman AI coding vibe coding 2026"),
-    ("Paul Graham",       "Paul Graham YC AI coding startups 2026"),
-    ("Linus Ekenstam",    "Linus Ekenstam vibe coding 2026"),
-]
-
-
-def get_track_and_topic() -> dict:
-    """
-    날짜+시간 기반으로 트랙과 주제 결정
-    - 아침(hour < 12) → 무조건 뉴스 트랙
-    - 저녁(hour >= 12) → day_of_year % 3 == 0 이면 인물 트랙, 나머지 교육 트랙
-    """
-    now      = datetime.now()
-    doy      = now.timetuple().tm_yday  # 1~365
-
-    if now.hour < 12:
-        track = "news"
-        log.info("  🗞️  트랙: 뉴스 (최신 AI 코딩 소식)")
-        return {"track": track}
-
-    elif doy % 3 == 0:
-        track = "people"
-        idx   = (doy // 3) % len(PEOPLE_TOPICS)
-        name, query = PEOPLE_TOPICS[idx]
-        log.info(f"  🌟 트랙: 인물 [{idx+1}/{len(PEOPLE_TOPICS)}]: {name}")
-        return {"track": track, "name": name, "query": query}
-
-    else:
-        track = "edu"
-        # 저녁 교육 트랙: doy * 2 로 분산
-        idx   = (doy * 2) % len(EDU_TOPICS)
-        title, query = EDU_TOPICS[idx]
-        log.info(f"  📚 트랙: 교육 [{idx+1}/{len(EDU_TOPICS)}]: {title}")
-        return {"track": track, "title": title, "query": query}
-
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 뉴스 수집 공통
+# 공통 유틸
 # ═════════════════════════════════════════════════════════════════════════════
 def extract_text(response) -> str:
+    """Claude 응답에서 텍스트 안전하게 추출"""
     texts = []
     for block in response.content:
         if hasattr(block, "text") and isinstance(block.text, str) and block.text.strip():
@@ -144,210 +48,34 @@ def extract_text(response) -> str:
     return "\n".join(texts)
 
 
-def search_news(queries: list) -> list:
-    """쿼리 목록으로 뉴스 수집"""
-    collected = []
+def search(query: str, max_tokens: int = 2000) -> str:
+    """단일 쿼리 웹서치 후 텍스트 반환"""
     today = datetime.now().strftime("%Y년 %m월 %d일")
-    for q in queries:
-        try:
-            response = claude.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=2000,
-                tools=[{"type": "web_search_20250305", "name": "web_search"}],
-                tool_choice={"type": "auto"},
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        f"오늘({today}) 기준으로 '{q}'를 검색하고 "
-                        "핵심 내용 3가지를 한국어로 요약해줘. "
-                        "각 항목은 제목과 2~3문장으로 작성해줘."
-                    ),
-                }],
-            )
-            text = extract_text(response)
-            if text:
-                collected.append({"query": q, "summary": text})
-                log.info(f"  ✅ '{q}' 수집 완료 ({len(text)}자)")
-            time.sleep(5)
-        except Exception as e:
-            log.warning(f"  ⚠️ '{q}' 실패: {e}")
-            time.sleep(3)
-    return collected
+    try:
+        response = claude.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=max_tokens,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            tool_choice={"type": "auto"},
+            messages=[{
+                "role": "user",
+                "content": f"오늘({today}) 기준으로 '{query}'를 검색하고 핵심 내용을 한국어로 요약해줘.",
+            }],
+        )
+        text = extract_text(response)
+        time.sleep(5)
+        return text
+    except Exception as e:
+        log.warning(f"  ⚠️ 검색 실패 '{query}': {e}")
+        time.sleep(3)
+        return ""
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# 트랙별 글 생성
-# ═════════════════════════════════════════════════════════════════════════════
-def generate_news_post() -> dict:
-    """📰 뉴스 트랙 — X/트위터 AI 코딩 최신 소식"""
-    log.info("📡 뉴스 트랙 — 최신 소식 수집...")
-    year  = datetime.now().year
-    today = datetime.now().strftime("%Y년 %m월 %d일")
-
-    queries = [
-        f"Claude Code Anthropic 업데이트 {year} 최신",
-        f"Cursor Windsurf AI IDE 새기능 {year} 최신",
-        f"Google AI Studio Gemini 코딩 업데이트 {year}",
-        f"OpenAI Codex Perplexity AI 코딩 {year} 최신",
-        f"vibe coding 트위터 화제 {year} 최신",
-    ]
-
-    collected = search_news(queries)
-
-    news_text = "\n\n".join(
-        f"[{item['query']}]\n{item['summary']}" for item in collected
-    ) if collected else f"{year}년 AI 코딩 도구들의 최신 업데이트 내용"
-
-    prompt = f"""
-당신은 '바이브코딩 스쿨' 블로그 에디터입니다. 오늘 날짜: {today}
-
-## 수집된 최신 소식
-{news_text}
-
-## 작성 지침
-- 오늘 AI 코딩 업계에서 일어난 일들을 한국 일반인에게 쉽게 전달
-- 어조: 친근한 테크 뉴스레터 스타일 ("~됐어요", "~네요")
-- 각 소식마다 "이게 왜 중요한가" 한 줄 해설 필수
-- 분량: 2000~2500자
-- {year}년 기준 (다른 연도 언급 금지)
-- 글 제목에 "오늘", "최신", "업데이트" 같은 시의성 키워드 포함
-
-## 출력 (JSON만, 코드블록 없이)
-{{
-  "title_candidates": [
-    "시의성 있는 뉴스 제목 후보 1",
-    "시의성 있는 뉴스 제목 후보 2",
-    "시의성 있는 뉴스 제목 후보 3",
-    "시의성 있는 뉴스 제목 후보 4",
-    "시의성 있는 뉴스 제목 후보 5"
-  ],
-  "meta_description": "메타설명 150자 이내",
-  "tags": ["AI코딩뉴스", "바이브코딩", "Claude", "Cursor", "최신업데이트"],
-  "slug": "ai-coding-news-{year}-today",
-  "content_html": "완성된 HTML 본문"
-}}
-"""
-    return _call_claude(prompt)
-
-
-def generate_edu_post(title: str, query: str) -> dict:
-    """📚 교육 트랙 — 실전 가이드"""
-    log.info(f"📡 교육 트랙 — '{title}' 뉴스 수집...")
-    year  = datetime.now().year
-    today = datetime.now().strftime("%Y년 %m월 %d일")
-
-    collected = search_news([
-        f"{query} 최신",
-        f"{query} 실전 후기",
-    ])
-
-    news_text = "\n\n".join(
-        f"[{item['query']}]\n{item['summary']}" for item in collected
-    ) if collected else f"{title} 관련 {year}년 최신 정보"
-
-    prompt = f"""
-당신은 '바이브코딩 스쿨' 블로그 에디터입니다. 오늘 날짜: {today}
-오늘 주제: {title}
-
-## 수집된 최신 정보
-{news_text}
-
-## 작성 지침
-- 독자: 코딩 0%의 일반인
-- 어조: 친근한 선생님 스타일 ("~해요", "~거예요")
-- 전문용어 금지, 읽고 바로 따라할 수 있게
-- 수집된 최신 정보를 본문에 반드시 녹여낼 것
-- 분량: 2500~3000자
-- {year}년 기준
-
-## 글 구조
-1. 공감 도입부
-2. 핵심 개념 쉬운 설명
-3. 최신 트렌드/정보 활용
-4. 단계별 실전 방법
-5. 꿀팁 또는 주의사항
-6. 마무리 + 다음 글 예고
-
-## 출력 (JSON만, 코드블록 없이)
-{{
-  "title_candidates": [
-    "SEO 제목 후보 1 ({year}년 기준)",
-    "SEO 제목 후보 2 ({year}년 기준)",
-    "SEO 제목 후보 3 ({year}년 기준)",
-    "SEO 제목 후보 4 ({year}년 기준)",
-    "SEO 제목 후보 5 ({year}년 기준)"
-  ],
-  "meta_description": "메타설명 150자 이내",
-  "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
-  "slug": "seo-friendly-slug",
-  "content_html": "완성된 HTML 본문"
-}}
-"""
-    return _call_claude(prompt)
-
-
-def generate_people_post(name: str, query: str) -> dict:
-    """🌟 인물 트랙 — 유명 바이브코더 근황 + 사용 사례"""
-    log.info(f"📡 인물 트랙 — '{name}' 정보 수집...")
-    year  = datetime.now().year
-    today = datetime.now().strftime("%Y년 %m월 %d일")
-
-    collected = search_news([
-        query,
-        f"{name} AI coding project {year}",
-    ])
-
-    news_text = "\n\n".join(
-        f"[{item['query']}]\n{item['summary']}" for item in collected
-    ) if collected else f"{name}의 {year}년 최근 활동 정보"
-
-    prompt = f"""
-당신은 '바이브코딩 스쿨' 블로그 에디터입니다. 오늘 날짜: {today}
-오늘 소개할 인물: {name}
-
-## 수집된 최신 정보
-{news_text}
-
-## 작성 지침
-- {name}이 최근 AI 코딩 도구로 무엇을 만들고 있는지 소개
-- 독자가 "나도 저렇게 할 수 있겠다"는 영감을 받도록 작성
-- 어조: 친근하고 흥미로운 인물 소개 스타일
-- 단순 소개가 아닌 "이 사람이 쓰는 도구와 방법" 실용적 내용 포함
-- 독자가 따라할 수 있는 팁 2~3가지 포함
-- 분량: 2000~2500자
-- {year}년 기준
-
-## 글 구조
-1. 흥미로운 도입 ("이 사람 알아요?")
-2. {name} 소개 (누구인지, 왜 유명한지)
-3. 최근 만든 것 / 하는 일
-4. 사용하는 AI 코딩 도구와 방법
-5. 우리가 배울 점 + 따라할 수 있는 팁
-6. 마무리
-
-## 출력 (JSON만, 코드블록 없이)
-{{
-  "title_candidates": [
-    "{name} 관련 흥미로운 제목 후보 1",
-    "{name} 관련 흥미로운 제목 후보 2",
-    "{name} 관련 흥미로운 제목 후보 3",
-    "{name} 관련 흥미로운 제목 후보 4",
-    "{name} 관련 흥미로운 제목 후보 5"
-  ],
-  "meta_description": "메타설명 150자 이내",
-  "tags": ["{name}", "바이브코딩", "AI코딩", "인물소개", "사용사례"],
-  "slug": "{name.lower().replace(' ', '-')}-vibe-coding-{year}",
-  "content_html": "완성된 HTML 본문"
-}}
-"""
-    return _call_claude(prompt)
-
-
-def _call_claude(prompt: str) -> dict:
+def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
     """Claude API 호출 + JSON 파싱"""
     response = claude.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=4000,
+        max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
     raw = response.content[0].text.strip()
@@ -360,8 +88,219 @@ def _call_claude(prompt: str) -> dict:
     return json.loads(raw.strip())
 
 
+def get_track() -> str:
+    """
+    아침(hour < 12) → news
+    저녁 중 3일에 1번 → people
+    나머지 저녁    → edu
+    """
+    now = datetime.now()
+    if now.hour < 12:
+        return "news"
+    return "people" if now.timetuple().tm_yday % 3 == 0 else "edu"
+
+
 # ═════════════════════════════════════════════════════════════════════════════
-# SEO 제목 선택
+# STEP 1: AI가 오늘의 주제를 스스로 결정
+# ═════════════════════════════════════════════════════════════════════════════
+def decide_topic(track: str) -> dict:
+    """
+    웹서치로 오늘의 AI 코딩 트렌드를 파악하고
+    트랙에 맞는 최적 주제를 AI가 스스로 생성
+    """
+    log.info(f"🧠 [{track.upper()}] 오늘의 주제 AI 자동 결정 중...")
+
+    year  = datetime.now().year
+    today = datetime.now().strftime("%Y년 %m월 %d일")
+
+    # 트랙별 트렌드 수집
+    if track == "news":
+        trend1 = search(f"Claude Anthropic AI coding update {year} latest")
+        trend2 = search(f"Cursor Windsurf Lovable vibe coding news {year} latest")
+        trend3 = search(f"OpenAI Codex Google Gemini Perplexity AI coding {year} latest")
+        context = f"[Anthropic/Claude]\n{trend1}\n\n[Cursor/Windsurf/Lovable]\n{trend2}\n\n[기타 AI 도구]\n{trend3}"
+
+        prompt = f"""
+오늘({today}) AI 코딩 업계 최신 트렌드 정보입니다:
+
+{context}
+
+위 정보를 바탕으로 오늘 '바이브코딩 스쿨' 블로그의 뉴스 포스트 주제를 결정해줘.
+- 오늘 가장 화제가 되는 내용 중심
+- 한국 일반인 독자가 관심 가질 주제
+- 이미 많이 다뤄진 "vibe coding이란?" 같은 기초 주제 절대 금지
+
+JSON만 출력 (코드블록 없이):
+{{
+  "topic": "오늘의 구체적인 뉴스 주제 (한 문장)",
+  "reason": "이 주제를 선택한 이유",
+  "search_queries": ["추가로 검색할 쿼리1", "추가로 검색할 쿼리2"]
+}}
+"""
+
+    elif track == "people":
+        # 오늘 화제의 인물 자동 선택
+        trend = search(f"vibe coding influencer developer twitter X {year} trending")
+        prompt = f"""
+오늘({today}) vibe coding 관련 화제의 인물 정보입니다:
+
+{trend}
+
+위 정보를 바탕으로 오늘 소개할 인물을 결정해줘.
+- Andrej Karpathy, Pieter Levels, Marc Lou, Greg Isenberg, Michael Truell 등 포함 고려
+- 최근 활발히 활동 중인 인물 우선
+- 독자가 영감받을 수 있는 실제 사용 사례가 있는 인물
+
+JSON만 출력 (코드블록 없이):
+{{
+  "topic": "인물 이름과 소개 주제 (예: Pieter Levels — 혼자 100개 SaaS 만든 비결)",
+  "person_name": "인물 영문 이름",
+  "reason": "이 인물을 선택한 이유",
+  "search_queries": ["인물 검색 쿼리1", "인물 검색 쿼리2"]
+}}
+"""
+
+    else:  # edu
+        # 오늘 검색량/화제 기반으로 교육 주제 자동 결정
+        trend1 = search(f"vibe coding tutorial beginner question {year}")
+        trend2 = search(f"AI coding tool comparison review {year} Korea")
+        prompt = f"""
+오늘({today}) AI 코딩 관련 검색 트렌드 및 화제 정보입니다:
+
+[튜토리얼/질문 트렌드]
+{trend1}
+
+[도구 비교/리뷰 트렌드]
+{trend2}
+
+위 정보를 바탕으로 오늘 '바이브코딩 스쿨' 블로그의 교육 포스트 주제를 결정해줘.
+- 코딩 0% 초보자가 실제로 궁금해하는 내용
+- 오늘 트렌드와 연관된 실용적 주제
+- "vibe coding이란?", "AI 코딩이란?" 같은 기초 입문 주제 절대 금지
+- 구체적이고 실천 가능한 주제 (예: "Cursor로 할 일 앱 30분 만들기")
+
+JSON만 출력 (코드블록 없이):
+{{
+  "topic": "오늘의 구체적인 교육 주제 (한 문장)",
+  "reason": "이 주제를 선택한 이유",
+  "search_queries": ["추가로 검색할 쿼리1", "추가로 검색할 쿼리2"]
+}}
+"""
+
+    topic_data = call_claude(prompt, max_tokens=500)
+    log.info(f"  ✅ 결정된 주제: {topic_data['topic']}")
+    log.info(f"  💡 선택 이유: {topic_data['reason']}")
+    return topic_data
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STEP 2: 주제에 맞는 심화 뉴스 수집
+# ═════════════════════════════════════════════════════════════════════════════
+def collect_deep_news(topic_data: dict) -> str:
+    """AI가 결정한 주제로 심화 뉴스 수집"""
+    log.info("📡 심화 뉴스 수집 중...")
+
+    results = []
+    for q in topic_data.get("search_queries", []):
+        text = search(q)
+        if text:
+            results.append(f"[{q}]\n{text}")
+
+    combined = "\n\n".join(results)
+    log.info(f"  ✅ 심화 뉴스 수집 완료 ({len(combined)}자)")
+    return combined
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STEP 3: 트랙별 블로그 글 생성
+# ═════════════════════════════════════════════════════════════════════════════
+def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
+    """트랙과 주제에 맞는 블로그 글 생성"""
+    log.info("✍️  블로그 글 작성 시작...")
+
+    year  = datetime.now().year
+    today = datetime.now().strftime("%Y년 %m월 %d일")
+    topic = topic_data["topic"]
+
+    base_rules = f"""
+블로그명: 바이브코딩 스쿨 (VIBE CODING School)
+오늘 날짜: {today} ({year}년 기준으로만 작성)
+오늘 주제: {topic}
+
+## 바이브코딩 스쿨 글쓰기 원칙
+- 독자: 코딩 0% 일반인 (직장인, 소상공인, 주부, 학생)
+- 어조: 친근한 선생님 ("~해요", "~거예요", "~네요")
+- 전문용어 나오면 반드시 쉽게 풀어서 설명
+- 수집된 최신 정보 반드시 본문에 녹여낼 것
+- {year}년 현재 기준 (다른 연도 절대 금지)
+- "vibe coding이란?", "AI 코딩이란?" 같은 기초 설명으로 글 시작 금지
+"""
+
+    if track == "news":
+        structure = """
+## 뉴스 트랙 글 구조
+1. 오늘의 핵심 소식 한 줄 요약으로 시작
+2. 각 소식별 쉬운 설명 + "이게 왜 중요한가" 한 줄 해설
+3. 독자에게 미치는 영향 (나는 어떻게 활용할 수 있나)
+4. 오늘의 픽: 가장 주목할 소식 1개 강조
+5. 마무리 + 내일 예고
+분량: 2000~2500자
+"""
+    elif track == "people":
+        name = topic_data.get("person_name", "")
+        structure = f"""
+## 인물 트랙 글 구조
+1. "{name} 알아요?" 흥미로운 도입
+2. 이 사람이 누구인지 (배경, 왜 유명한지)
+3. 최근 AI 코딩으로 만든 것들 (구체적 사례)
+4. 사용하는 도구와 방법 (독자가 따라할 수 있게)
+5. 우리가 배울 수 있는 핵심 교훈 3가지
+6. 마무리 (나도 시작할 수 있다는 동기부여)
+분량: 2000~2500자
+"""
+    else:
+        structure = """
+## 교육 트랙 글 구조
+1. 공감 도입 (독자의 불편함/바람)
+2. 오늘 주제 핵심 개념 쉽게 설명
+3. 최신 트렌드/정보 활용
+4. 단계별 실전 방법 (바로 따라할 수 있게)
+5. 꿀팁 또는 주의사항
+6. 마무리 + 다음 글 예고
+분량: 2500~3000자
+"""
+
+    prompt = f"""
+{base_rules}
+
+## 수집된 최신 정보
+{deep_news if deep_news else f"{topic} 관련 {year}년 최신 정보"}
+
+{structure}
+
+## 출력 (JSON만, 코드블록 없이)
+{{
+  "title_candidates": [
+    "클릭률 높은 SEO 제목 1 ({year}년, 구체적)",
+    "클릭률 높은 SEO 제목 2 ({year}년, 구체적)",
+    "클릭률 높은 SEO 제목 3 ({year}년, 구체적)",
+    "클릭률 높은 SEO 제목 4 ({year}년, 구체적)",
+    "클릭률 높은 SEO 제목 5 ({year}년, 구체적)"
+  ],
+  "meta_description": "구글 클릭률 높은 메타설명 150자 이내",
+  "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
+  "slug": "seo-english-slug-{year}",
+  "content_html": "완성된 HTML 본문 (h2 h3 p ul li strong 사용)"
+}}
+"""
+
+    post_data = call_claude(prompt)
+    log.info("  ✅ 블로그 글 생성 완료")
+    return post_data
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STEP 4: SEO 제목 선택
 # ═════════════════════════════════════════════════════════════════════════════
 def select_best_title(post_data: dict) -> str:
     log.info("🔍 SEO 제목 최적화...")
@@ -385,7 +324,7 @@ def select_best_title(post_data: dict) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 이미지 프롬프트 생성
+# STEP 5: 이미지 프롬프트 생성
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_image_prompt(title: str, post_data: dict) -> str:
     log.info("🖼️  이미지 프롬프트 생성 중...")
@@ -409,7 +348,7 @@ def generate_image_prompt(title: str, post_data: dict) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 이미지 생성 (Gemini 2.5 Flash Image — 무료)
+# STEP 6: 이미지 생성 (Gemini 2.5 Flash Image — 무료)
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_thumbnail(image_prompt: str) -> str:
     log.info("🎨 썸네일 생성 중... (Gemini 2.5 Flash Image / 무료)")
@@ -441,7 +380,7 @@ def generate_thumbnail(image_prompt: str) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Blogger 포스팅
+# STEP 7: Blogger 포스팅
 # ═════════════════════════════════════════════════════════════════════════════
 def get_blogger_service():
     creds_info = json.loads(GOOGLE_CREDENTIALS)
@@ -467,7 +406,9 @@ def post_to_blogger(title: str, post_data: dict, image_b64: str) -> str:
   <img src="{image_src}" alt="{title}"
        style="width:100%;border-radius:12px;max-height:420px;object-fit:cover;" />
 </div>
+
 {post_data['content_html']}
+
 <hr style="margin:3rem 0;border:none;border-top:1px solid #eee;" />
 <div style="background:#f0f4ff;padding:1.5rem;border-radius:8px;margin-top:2rem;">
   <p style="margin:0;font-size:0.9rem;color:#555;">
@@ -500,28 +441,28 @@ def post_to_blogger(title: str, post_data: dict, image_b64: str) -> str:
 # ═════════════════════════════════════════════════════════════════════════════
 def main():
     log.info("=" * 60)
-    log.info("🚀 바이브코딩 스쿨 자동화 시작")
+    log.info("🚀 바이브코딩 스쿨 자동화 시작 (v4 — AI 주제 자동 결정)")
     log.info(f"   날짜: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     log.info("=" * 60)
 
     try:
-        track_info = get_track_and_topic()
-        track = track_info["track"]
+        # 트랙 결정 (아침=뉴스 / 저녁=교육 or 인물)
+        track = get_track()
+        log.info(f"  📌 트랙: {track.upper()}")
 
-        # 트랙별 글 생성
-        if track == "news":
-            post_data = generate_news_post()
-        elif track == "people":
-            post_data = generate_people_post(track_info["name"], track_info["query"])
-        else:  # edu
-            post_data = generate_edu_post(track_info["title"], track_info["query"])
+        # AI가 오늘의 트렌드를 보고 주제 스스로 결정
+        topic_data = decide_topic(track)
 
-        log.info("  ✅ 글 생성 완료")
+        # 결정된 주제로 심화 뉴스 추가 수집
+        deep_news = collect_deep_news(topic_data)
+
+        # 트랙+주제에 맞는 글 생성
+        post_data = generate_post(track, topic_data, deep_news)
 
         # SEO 제목 선택
         best_title = select_best_title(post_data)
 
-        # 이미지 생성
+        # 이미지 생성 (글 내용 기반 — 독립적)
         image_prompt = generate_image_prompt(best_title, post_data)
         image_b64    = generate_thumbnail(image_prompt)
 
@@ -530,7 +471,8 @@ def main():
 
         log.info("=" * 60)
         log.info("🎉 전체 파이프라인 완료!")
-        log.info(f"   트랙: {track.upper()} | URL: {post_url}")
+        log.info(f"   트랙: {track.upper()} | 주제: {topic_data['topic']}")
+        log.info(f"   URL: {post_url}")
         log.info("=" * 60)
 
     except Exception as e:
