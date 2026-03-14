@@ -5,7 +5,7 @@ Vibe Coding Blog Automation
 1. 최신 vibe coding 뉴스 수집 (Claude 웹서치)
 2. 교육용 블로그 글 작성 (Claude API)
 3. SEO 제목/메타태그 생성
-4. 썸네일 이미지 생성 (DALL-E 3)
+4. 썸네일 이미지 생성 (Gemini REST API - 무료)
 5. Google Blogger 자동 포스팅
 """
 
@@ -19,7 +19,6 @@ from datetime import datetime
 
 import anthropic
 import requests
-import google.generativeai as genai
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
@@ -32,14 +31,13 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── 환경변수 ─────────────────────────────────────────────────────────────────
-ANTHROPIC_API_KEY   = os.environ["ANTHROPIC_API_KEY"]
-GEMINI_API_KEY      = os.environ["GEMINI_API_KEY"]        # Google AI Studio 무료 키
-BLOGGER_BLOG_ID     = os.environ["BLOGGER_BLOG_ID"]
-GOOGLE_CREDENTIALS  = os.environ["GOOGLE_CREDENTIALS_JSON"]  # JSON 문자열
+ANTHROPIC_API_KEY  = os.environ["ANTHROPIC_API_KEY"]
+GEMINI_API_KEY     = os.environ["GEMINI_API_KEY"]
+BLOGGER_BLOG_ID    = os.environ["BLOGGER_BLOG_ID"]
+GOOGLE_CREDENTIALS = os.environ["GOOGLE_CREDENTIALS_JSON"]
 
 # ── 클라이언트 초기화 ────────────────────────────────────────────────────────
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-genai.configure(api_key=GEMINI_API_KEY)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -50,11 +48,13 @@ def collect_latest_news() -> dict:
     log.info("📡 최신 뉴스 수집 시작...")
 
     today = datetime.now().strftime("%Y년 %m월 %d일")
+    year  = datetime.now().year  # 자동으로 현재 연도 사용
+
     search_topics = [
-        "vibe coding 최신 뉴스 2025",
-        "Claude Code AI 코딩 도구 업데이트",
-        "Cursor Windsurf Copilot 비교 2025",
-        "AI 코딩 도구 초보자 튜토리얼",
+        f"vibe coding 최신 트렌드 {year}",
+        f"Claude Code AI 코딩 도구 업데이트 {year}",
+        f"Cursor Windsurf AI IDE 비교 {year}",
+        f"AI 코딩 도구 초보자 입문 {year}",
     ]
 
     collected = []
@@ -76,8 +76,9 @@ def collect_latest_news() -> dict:
             text = "".join(
                 block.text for block in response.content if hasattr(block, "text")
             )
-            collected.append({"topic": topic, "summary": text})
-            time.sleep(1)  # API 레이트 리밋 방지
+            if text.strip():
+                collected.append({"topic": topic, "summary": text})
+            time.sleep(3)  # API 레이트 리밋 방지
         except Exception as e:
             log.warning(f"  ⚠️ '{topic}' 검색 실패: {e}")
 
@@ -92,12 +93,15 @@ def generate_blog_post(news_data: dict) -> dict:
     """수집된 뉴스를 바탕으로 교육용 블로그 글 생성"""
     log.info("✍️  블로그 글 작성 시작...")
 
+    year = datetime.now().year
+
     news_summary = "\n\n".join(
         f"[{item['topic']}]\n{item['summary']}" for item in news_data["items"]
-    )
+    ) if news_data["items"] else f"{year}년 최신 AI 코딩 트렌드 정보"
 
     prompt = f"""
 당신은 비개발자들에게 AI 코딩 도구(vibe coding)를 쉽게 설명하는 전문 블로그 작가입니다.
+오늘 날짜는 {news_data['date']}입니다. 반드시 {year}년 기준으로 글을 작성하세요.
 
 ## 오늘 수집된 최신 정보
 {news_summary}
@@ -106,6 +110,7 @@ def generate_blog_post(news_data: dict) -> dict:
 - 독자: 코딩을 전혀 모르지만 AI로 앱/웹사이트 만들고 싶은 일반인
 - 어조: 친근하고 쉬운 말투, 전문용어는 반드시 풀어서 설명
 - 분량: 2,500~3,000자
+- 반드시 {year}년 현재 기준으로 작성 (과거 연도 언급 금지)
 - 구조:
   1. 흥미로운 도입부 (독자의 공감 유도)
   2. Vibe Coding이란? (쉬운 정의)
@@ -118,9 +123,9 @@ def generate_blog_post(news_data: dict) -> dict:
 반드시 아래 JSON만 출력하고 다른 텍스트 없이:
 {{
   "title_candidates": [
-    "SEO 최적화된 제목 후보 5개 (클릭률 높은 형태로)",
+    "{year}년 기준 SEO 최적화된 제목 후보 5개 (클릭률 높은 형태로)",
     "예: 코딩 몰라도 앱 만드는 법? Vibe Coding 완전 정복",
-    "예: 2025년 AI 코딩 도구 TOP 3 — 비개발자도 하루 만에 앱 완성",
+    "예: {year}년 AI 코딩 도구 TOP 3 — 비개발자도 하루 만에 앱 완성",
     "예: ChatGPT로 앱 만들기? 이제 Claude Code가 대세인 이유",
     "예: 직장인이 퇴근 후 2시간으로 앱 만든 실제 후기"
   ],
@@ -128,7 +133,7 @@ def generate_blog_post(news_data: dict) -> dict:
   "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
   "slug": "url-friendly-slug-in-english",
   "content_html": "완성된 블로그 글 HTML (h2, h3, p, ul, li, strong 태그 사용)",
-  "image_prompt": "DALL-E로 생성할 썸네일 이미지 프롬프트 (영문, 블로그 주제에 맞는 미래적/친근한 이미지)"
+  "image_prompt": "Gemini로 생성할 썸네일 이미지 프롬프트 (영문, 블로그 주제에 맞는 미래적/친근한 이미지)"
 }}
 """
 
@@ -139,7 +144,6 @@ def generate_blog_post(news_data: dict) -> dict:
     )
 
     raw = response.content[0].text.strip()
-    # JSON 펜스 제거
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
@@ -180,15 +184,11 @@ def select_best_title(post_data: dict) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 4단계: 썸네일 이미지 생성 (Gemini Nano Banana 2 — 무료)
+# 4단계: 썸네일 이미지 생성 (Gemini REST API — 무료)
 # ═══════════════════════════════════════════════════════════════════════════════
 def generate_thumbnail(image_prompt: str) -> str:
-    """
-    Google Gemini 2.5 Flash Image (Nano Banana 2)로 썸네일 생성
-    - 무료 티어: 하루 최대 500장
-    - 신용카드 불필요 (Google AI Studio 키만 있으면 됨)
-    """
-    log.info("🎨 썸네일 이미지 생성 중... (Nano Banana 2 / 무료)")
+    """Gemini REST API로 썸네일 이미지 생성 (무료, 하루 500장)"""
+    log.info("🎨 썸네일 이미지 생성 중... (Gemini / 무료)")
 
     enhanced_prompt = (
         f"{image_prompt}. "
@@ -198,22 +198,25 @@ def generate_thumbnail(image_prompt: str) -> str:
     )
 
     try:
-        model = genai.GenerativeModel("gemini-2.5-flash-preview-05-20")
-        response = model.generate_content(
-            [enhanced_prompt],
-            generation_config=genai.GenerationConfig(
-                response_modalities=["IMAGE"],
-            ),
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"gemini-2.0-flash-exp:generateContent?key={GEMINI_API_KEY}"
         )
+        payload = {
+            "contents": [{"parts": [{"text": enhanced_prompt}]}],
+            "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]},
+        }
+        resp = requests.post(url, json=payload, timeout=60)
+        resp.raise_for_status()
+        data = resp.json()
 
-        # 응답에서 이미지 데이터 추출
-        for part in response.candidates[0].content.parts:
-            if part.inline_data is not None:
-                b64 = base64.b64encode(part.inline_data.data).decode("utf-8")
-                log.info("  ✅ Nano Banana 2 이미지 생성 완료 (무료)")
+        for part in data["candidates"][0]["content"]["parts"]:
+            if "inlineData" in part:
+                b64 = part["inlineData"]["data"]
+                log.info("  ✅ 이미지 생성 완료 (Gemini 무료)")
                 return b64
 
-        raise ValueError("이미지 데이터가 응답에 없습니다")
+        raise ValueError("이미지 데이터 없음")
 
     except Exception as e:
         log.warning(f"  ⚠️ 이미지 생성 실패 ({e}), 플레이스홀더 사용")
@@ -236,13 +239,10 @@ def get_blogger_service():
     return build("blogger", "v3", credentials=creds)
 
 
-def upload_image_to_blogger(b64_image: str, title: str) -> str:
-    """이미지를 Blogger에 업로드하고 URL 반환 (Drive 우회 방식)"""
-    # Blogger는 직접 이미지 업로드 API 미제공 → data URI 또는 외부 URL 사용
-    # 실제 운영 시 Google Drive 또는 Cloudinary 사용 권장
+def build_image_src(b64_image: str) -> str:
+    """이미지 data URI 생성 (없으면 플레이스홀더)"""
     if not b64_image:
-        return "https://via.placeholder.com/1200x630/6366f1/ffffff?text=Vibe+Coding"
-    # data URI로 HTML에 직접 삽입 (소규모 블로그에 적합)
+        return "https://placehold.co/1200x630/6366f1/ffffff?text=Vibe+Coding+School"
     return f"data:image/png;base64,{b64_image}"
 
 
@@ -250,13 +250,12 @@ def post_to_blogger(title: str, post_data: dict, image_data: str) -> str:
     """완성된 글을 Google Blogger에 포스팅"""
     log.info("📤 Blogger 포스팅 중...")
 
-    image_src = upload_image_to_blogger(image_data, title)
+    image_src = build_image_src(image_data)
 
-    # 썸네일 + 본문 조합
     full_html = f"""
-<div class="post-thumbnail" style="margin-bottom:2rem;">
-  <img src="{image_src}" alt="{title}" 
-       style="width:100%;border-radius:12px;max-height:400px;object-fit:cover;" />
+<div style="margin-bottom:2rem;">
+  <img src="{image_src}" alt="{title}"
+       style="width:100%;border-radius:12px;max-height:420px;object-fit:cover;" />
 </div>
 
 {post_data['content_html']}
@@ -264,8 +263,8 @@ def post_to_blogger(title: str, post_data: dict, image_data: str) -> str:
 <hr style="margin:3rem 0;" />
 <div style="background:#f0f4ff;padding:1.5rem;border-radius:8px;margin-top:2rem;">
   <p style="margin:0;font-size:0.9rem;color:#555;">
-    📌 <strong>이 글이 도움이 됐나요?</strong> 
-    구독하면 매일 최신 AI 코딩 트렌드를 받아볼 수 있어요!
+    📌 <strong>이 글이 도움이 됐나요?</strong>
+    구독하면 매일 아침·저녁 최신 AI 코딩 트렌드를 받아볼 수 있어요!
   </p>
 </div>
 """
@@ -302,20 +301,11 @@ def main():
     log.info("=" * 60)
 
     try:
-        # 1. 뉴스 수집
-        news_data = collect_latest_news()
-
-        # 2. 블로그 글 작성
-        post_data = generate_blog_post(news_data)
-
-        # 3. 최적 제목 선택
+        news_data  = collect_latest_news()
+        post_data  = generate_blog_post(news_data)
         best_title = select_best_title(post_data)
-
-        # 4. 이미지 생성
-        image_b64 = generate_thumbnail(post_data.get("image_prompt", ""))
-
-        # 5. 블로그 포스팅
-        post_url = post_to_blogger(best_title, post_data, image_b64)
+        image_b64  = generate_thumbnail(post_data.get("image_prompt", ""))
+        post_url   = post_to_blogger(best_title, post_data, image_b64)
 
         log.info("=" * 60)
         log.info("🎉 전체 파이프라인 완료!")
