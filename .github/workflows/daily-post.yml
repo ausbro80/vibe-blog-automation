@@ -12,6 +12,9 @@ on:
         default: "false"
         type: boolean
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   post-blog:
     name: 블로그 글 생성 및 포스팅
