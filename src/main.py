@@ -14,6 +14,7 @@ import json
 import time
 import base64
 import logging
+import re
 from datetime import datetime
 
 import anthropic
@@ -120,25 +121,27 @@ def upload_image_to_blogger(image_b64: str, title: str) -> str:
             client_id=creds_info["client_id"],
             client_secret=creds_info["client_secret"],
         )
-        # Picasa Web Albums API (Blogger 내부 이미지 저장소)
         from google.auth.transport.requests import Request as GoogleRequest
         creds.refresh(GoogleRequest())
 
         img_bytes = base64.b64decode(image_b64)
-        safe_title = title[:50].replace(" ", "_").replace("/", "_")
 
-        upload_url = f"https://picasaweb.google.com/data/feed/api/user/default/albumid/default"
+        # ✅ 수정: 한글/비ASCII 문자 제거 후 ASCII만 남기기
+        safe_title = re.sub(r'[^\x00-\x7F]', '', title)          # 비ASCII 제거
+        safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', safe_title) # 특수문자 → _
+        safe_title = safe_title[:50].strip('_') or "thumbnail"    # 길이 제한 + 빈 경우 fallback
+
+        upload_url = "https://picasaweb.google.com/data/feed/api/user/default/albumid/default"
         headers = {
             "Authorization": f"Bearer {creds.token}",
             "Content-Type": "image/png",
-            "Slug": f"{safe_title}.png",
+            "Slug": f"{safe_title}.png",   # ✅ 이제 ASCII만 포함
             "GData-Version": "2",
         }
         resp = requests.post(upload_url, headers=headers, data=img_bytes, timeout=60)
         resp.raise_for_status()
 
         # XML에서 이미지 URL 파싱
-        import re
         match = re.search(r"<media:content[^>]+url='([^']+)'", resp.text)
         if not match:
             match = re.search(r'url="(https://[^"]+\.png[^"]*)"', resp.text)
@@ -417,9 +420,6 @@ def get_blogger_service():
 def post_to_blogger(title: str, post_data: dict, image_b64: str) -> str:
     log.info("📤 Blogger 포스팅 중...")
 
-    # ── 이미지 URL 결정 ──────────────────────────────────────────
-    # 1순위: Blogger 앨범에 업로드한 외부 URL (대표 이미지 자동 인식됨)
-    # 2순위: placehold.co 대체 이미지
     image_url = upload_image_to_blogger(image_b64, title)
     if not image_url:
         image_url = "https://placehold.co/1200x630/6366f1/ffffff?text=Vibe+Coding+School"
