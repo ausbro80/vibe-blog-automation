@@ -101,35 +101,79 @@ def get_track() -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# 이미지 업로드 — base64 → Blogger 이미지 URL
+# ═════════════════════════════════════════════════════════════════════════════
+def upload_image_to_blogger(image_b64: str, title: str) -> str:
+    """
+    base64 이미지를 Blogger 블로그 앨범에 업로드하고 URL 반환.
+    실패 시 빈 문자열 반환 (placehold fallback 사용).
+    """
+    if not image_b64:
+        return ""
+    try:
+        log.info("☁️  이미지 Blogger 앨범 업로드 중...")
+        creds_info = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
+        creds = Credentials(
+            token=creds_info["token"],
+            refresh_token=creds_info["refresh_token"],
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=creds_info["client_id"],
+            client_secret=creds_info["client_secret"],
+        )
+        # Picasa Web Albums API (Blogger 내부 이미지 저장소)
+        from google.auth.transport.requests import Request as GoogleRequest
+        creds.refresh(GoogleRequest())
+
+        img_bytes = base64.b64decode(image_b64)
+        safe_title = title[:50].replace(" ", "_").replace("/", "_")
+
+        upload_url = f"https://picasaweb.google.com/data/feed/api/user/default/albumid/default"
+        headers = {
+            "Authorization": f"Bearer {creds.token}",
+            "Content-Type": "image/png",
+            "Slug": f"{safe_title}.png",
+            "GData-Version": "2",
+        }
+        resp = requests.post(upload_url, headers=headers, data=img_bytes, timeout=60)
+        resp.raise_for_status()
+
+        # XML에서 이미지 URL 파싱
+        import re
+        match = re.search(r"<media:content[^>]+url='([^']+)'", resp.text)
+        if not match:
+            match = re.search(r'url="(https://[^"]+\.png[^"]*)"', resp.text)
+        if match:
+            img_url = match.group(1)
+            log.info(f"  ✅ 이미지 업로드 완료: {img_url[:60]}...")
+            return img_url
+        log.warning("  ⚠️ 이미지 URL 파싱 실패")
+        return ""
+    except Exception as e:
+        log.warning(f"  ⚠️ 이미지 업로드 실패 ({e}), placehold 사용")
+        return ""
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # STEP 1: AI가 오늘의 주제를 스스로 결정
 # ═════════════════════════════════════════════════════════════════════════════
 def decide_topic(track: str) -> dict:
-    """
-    웹서치로 오늘의 AI 코딩 트렌드를 파악하고
-    트랙에 맞는 최적 주제를 AI가 스스로 생성
-    """
     log.info(f"🧠 [{track.upper()}] 오늘의 주제 AI 자동 결정 중...")
 
     year  = datetime.now().year
     today = datetime.now().strftime("%Y년 %m월 %d일")
 
-    # 트랙별 트렌드 수집
     if track == "news":
         trend1 = search(f"Claude Anthropic AI coding update {year} latest")
         trend2 = search(f"Cursor Windsurf Lovable vibe coding news {year} latest")
         trend3 = search(f"OpenAI Codex Google Gemini Perplexity AI coding {year} latest")
         context = f"[Anthropic/Claude]\n{trend1}\n\n[Cursor/Windsurf/Lovable]\n{trend2}\n\n[기타 AI 도구]\n{trend3}"
-
         prompt = f"""
 오늘({today}) AI 코딩 업계 최신 트렌드 정보입니다:
-
 {context}
-
 위 정보를 바탕으로 오늘 '바이브코딩 스쿨' 블로그의 뉴스 포스트 주제를 결정해줘.
 - 오늘 가장 화제가 되는 내용 중심
 - 한국 일반인 독자가 관심 가질 주제
 - 이미 많이 다뤄진 "vibe coding이란?" 같은 기초 주제 절대 금지
-
 JSON만 출력 (코드블록 없이):
 {{
   "topic": "오늘의 구체적인 뉴스 주제 (한 문장)",
@@ -137,48 +181,34 @@ JSON만 출력 (코드블록 없이):
   "search_queries": ["추가로 검색할 쿼리1", "추가로 검색할 쿼리2"]
 }}
 """
-
     elif track == "people":
-        # 오늘 화제의 인물 자동 선택
         trend = search(f"vibe coding influencer developer twitter X {year} trending")
         prompt = f"""
 오늘({today}) vibe coding 관련 화제의 인물 정보입니다:
-
 {trend}
-
 위 정보를 바탕으로 오늘 소개할 인물을 결정해줘.
 - Andrej Karpathy, Pieter Levels, Marc Lou, Greg Isenberg, Michael Truell 등 포함 고려
 - 최근 활발히 활동 중인 인물 우선
-- 독자가 영감받을 수 있는 실제 사용 사례가 있는 인물
-
 JSON만 출력 (코드블록 없이):
 {{
-  "topic": "인물 이름과 소개 주제 (예: Pieter Levels — 혼자 100개 SaaS 만든 비결)",
+  "topic": "인물 이름과 소개 주제",
   "person_name": "인물 영문 이름",
   "reason": "이 인물을 선택한 이유",
   "search_queries": ["인물 검색 쿼리1", "인물 검색 쿼리2"]
 }}
 """
-
-    else:  # edu
-        # 오늘 검색량/화제 기반으로 교육 주제 자동 결정
+    else:
         trend1 = search(f"vibe coding tutorial beginner question {year}")
         trend2 = search(f"AI coding tool comparison review {year} Korea")
         prompt = f"""
 오늘({today}) AI 코딩 관련 검색 트렌드 및 화제 정보입니다:
-
 [튜토리얼/질문 트렌드]
 {trend1}
-
 [도구 비교/리뷰 트렌드]
 {trend2}
-
 위 정보를 바탕으로 오늘 '바이브코딩 스쿨' 블로그의 교육 포스트 주제를 결정해줘.
 - 코딩 0% 초보자가 실제로 궁금해하는 내용
-- 오늘 트렌드와 연관된 실용적 주제
 - "vibe coding이란?", "AI 코딩이란?" 같은 기초 입문 주제 절대 금지
-- 구체적이고 실천 가능한 주제 (예: "Cursor로 할 일 앱 30분 만들기")
-
 JSON만 출력 (코드블록 없이):
 {{
   "topic": "오늘의 구체적인 교육 주제 (한 문장)",
@@ -194,30 +224,25 @@ JSON만 출력 (코드블록 없이):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 2: 주제에 맞는 심화 뉴스 수집
+# STEP 2: 심화 뉴스 수집
 # ═════════════════════════════════════════════════════════════════════════════
 def collect_deep_news(topic_data: dict) -> str:
-    """AI가 결정한 주제로 심화 뉴스 수집"""
     log.info("📡 심화 뉴스 수집 중...")
-
     results = []
     for q in topic_data.get("search_queries", []):
         text = search(q)
         if text:
             results.append(f"[{q}]\n{text}")
-
     combined = "\n\n".join(results)
     log.info(f"  ✅ 심화 뉴스 수집 완료 ({len(combined)}자)")
     return combined
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 3: 트랙별 블로그 글 생성
+# STEP 3: 블로그 글 생성
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
-    """트랙과 주제에 맞는 블로그 글 생성"""
     log.info("✍️  블로그 글 작성 시작...")
-
     year  = datetime.now().year
     today = datetime.now().strftime("%Y년 %m월 %d일")
     topic = topic_data["topic"]
@@ -226,7 +251,6 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 블로그명: 바이브코딩 스쿨 (VIBE CODING School)
 오늘 날짜: {today} ({year}년 기준으로만 작성)
 오늘 주제: {topic}
-
 ## 바이브코딩 스쿨 글쓰기 원칙
 - 독자: 코딩 0% 일반인 (직장인, 소상공인, 주부, 학생)
 - 어조: 친근한 선생님 ("~해요", "~거예요", "~네요")
@@ -241,7 +265,7 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 ## 뉴스 트랙 글 구조
 1. 오늘의 핵심 소식 한 줄 요약으로 시작
 2. 각 소식별 쉬운 설명 + "이게 왜 중요한가" 한 줄 해설
-3. 독자에게 미치는 영향 (나는 어떻게 활용할 수 있나)
+3. 독자에게 미치는 영향
 4. 오늘의 픽: 가장 주목할 소식 1개 강조
 5. 마무리 + 내일 예고
 분량: 2000~2500자
@@ -251,20 +275,20 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
         structure = f"""
 ## 인물 트랙 글 구조
 1. "{name} 알아요?" 흥미로운 도입
-2. 이 사람이 누구인지 (배경, 왜 유명한지)
-3. 최근 AI 코딩으로 만든 것들 (구체적 사례)
-4. 사용하는 도구와 방법 (독자가 따라할 수 있게)
-5. 우리가 배울 수 있는 핵심 교훈 3가지
-6. 마무리 (나도 시작할 수 있다는 동기부여)
+2. 이 사람이 누구인지
+3. 최근 AI 코딩으로 만든 것들
+4. 사용하는 도구와 방법
+5. 핵심 교훈 3가지
+6. 마무리 (동기부여)
 분량: 2000~2500자
 """
     else:
         structure = """
 ## 교육 트랙 글 구조
-1. 공감 도입 (독자의 불편함/바람)
-2. 오늘 주제 핵심 개념 쉽게 설명
-3. 최신 트렌드/정보 활용
-4. 단계별 실전 방법 (바로 따라할 수 있게)
+1. 공감 도입
+2. 핵심 개념 쉽게 설명
+3. 최신 트렌드 활용
+4. 단계별 실전 방법
 5. 꿀팁 또는 주의사항
 6. 마무리 + 다음 글 예고
 분량: 2500~3000자
@@ -272,12 +296,9 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 
     prompt = f"""
 {base_rules}
-
 ## 수집된 최신 정보
 {deep_news if deep_news else f"{topic} 관련 {year}년 최신 정보"}
-
 {structure}
-
 ## 출력 (JSON만, 코드블록 없이)
 {{
   "title_candidates": [
@@ -293,7 +314,6 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
   "content_html": "완성된 HTML 본문 (h2 h3 p ul li strong 사용)"
 }}
 """
-
     post_data = call_claude(prompt)
     log.info("  ✅ 블로그 글 생성 완료")
     return post_data
@@ -348,7 +368,7 @@ def generate_image_prompt(title: str, post_data: dict) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 6: 이미지 생성 (Gemini 2.5 Flash Image — 무료)
+# STEP 6: 이미지 생성 (Gemini 2.5 Flash Image)
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_thumbnail(image_prompt: str) -> str:
     log.info("🎨 썸네일 생성 중... (Gemini 2.5 Flash Image / 무료)")
@@ -396,14 +416,18 @@ def get_blogger_service():
 
 def post_to_blogger(title: str, post_data: dict, image_b64: str) -> str:
     log.info("📤 Blogger 포스팅 중...")
-    image_src = (
-        f"data:image/png;base64,{image_b64}"
-        if image_b64
-        else "https://placehold.co/1200x630/6366f1/ffffff?text=Vibe+Coding+School"
-    )
+
+    # ── 이미지 URL 결정 ──────────────────────────────────────────
+    # 1순위: Blogger 앨범에 업로드한 외부 URL (대표 이미지 자동 인식됨)
+    # 2순위: placehold.co 대체 이미지
+    image_url = upload_image_to_blogger(image_b64, title)
+    if not image_url:
+        image_url = "https://placehold.co/1200x630/6366f1/ffffff?text=Vibe+Coding+School"
+        log.info("  ℹ️  placehold 이미지 사용")
+
     full_html = f"""
 <div style="margin-bottom:2rem;">
-  <img src="{image_src}" alt="{title}"
+  <img src="{image_url}" alt="{title}"
        style="width:100%;border-radius:12px;max-height:420px;object-fit:cover;" />
 </div>
 
@@ -442,27 +466,17 @@ def main():
     log.info("=" * 60)
 
     try:
-        # 트랙 결정 (아침=뉴스 / 저녁=교육 or 인물)
         track = get_track()
         log.info(f"  📌 트랙: {track.upper()}")
 
-        # AI가 오늘의 트렌드를 보고 주제 스스로 결정
         topic_data = decide_topic(track)
-
-        # 결정된 주제로 심화 뉴스 추가 수집
-        deep_news = collect_deep_news(topic_data)
-
-        # 트랙+주제에 맞는 글 생성
-        post_data = generate_post(track, topic_data, deep_news)
-
-        # SEO 제목 선택
+        deep_news  = collect_deep_news(topic_data)
+        post_data  = generate_post(track, topic_data, deep_news)
         best_title = select_best_title(post_data)
 
-        # 이미지 생성 (글 내용 기반 — 독립적)
         image_prompt = generate_image_prompt(best_title, post_data)
         image_b64    = generate_thumbnail(image_prompt)
 
-        # 포스팅
         post_url = post_to_blogger(best_title, post_data, image_b64)
 
         log.info("=" * 60)
