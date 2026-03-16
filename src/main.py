@@ -424,10 +424,6 @@ def post_to_blogger(title: str, post_data: dict, image_b64: str) -> str:
             "title": title,
             "content": full_html,
             "labels": post_data.get("tags", []),
-            "customMetaData": json.dumps({
-                "description": post_data.get("meta_description", ""),
-                "slug": post_data.get("slug", ""),
-            }),
         },
         isDraft=False,
     ).execute()
