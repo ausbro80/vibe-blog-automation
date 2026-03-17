@@ -1,11 +1,12 @@
 """
 바이브코딩 스쿨 (VIBE CODING School) — Blog Automation v4
 ──────────────────────────────────────────────────────────
-3트랙 자동 포스팅:
+트랙 구성:
   아침 9시 → 📰 뉴스 트랙: 오늘의 AI 코딩 최신 소식
-  저녁 9시 → 📚 교육 트랙 OR 🌟 인물 트랙 (3일에 1번)
+  저녁 9시 → 📚 교육 트랙 / 🛠️ 툴 사용법 트랙 (하루씩 번갈아)
 
-핵심: 주제를 미리 정하지 않고 AI가 오늘의 웹 트렌드를 보고 스스로 결정
+툴 순환: Claude → Perplexity → Google AI Studio → Gemini →
+         Codex → Cursor → Windsurf → Lovable → 반복
 """
 
 import os
@@ -35,6 +36,18 @@ GOOGLE_CREDENTIALS = os.environ["GOOGLE_CREDENTIALS_JSON"]
 
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
+# 툴 사용법 트랙 순환 목록
+TOOL_LIST = [
+    "Claude (Anthropic)",
+    "Perplexity AI",
+    "Google AI Studio",
+    "Gemini",
+    "OpenAI Codex",
+    "Cursor",
+    "Windsurf",
+    "Lovable",
+]
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 공통 유틸
@@ -53,7 +66,7 @@ def search(query: str, max_tokens: int = 2000) -> str:
     today = datetime.now().strftime("%Y년 %m월 %d일")
     for attempt in range(3):
         try:
-            time.sleep(15)  # 호출 전 대기 (rate limit 방지)
+            time.sleep(15)
             response = claude.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=max_tokens,
@@ -78,7 +91,7 @@ def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
     """Claude API 호출 + JSON 파싱 (rate limit 재시도 포함)"""
     for attempt in range(3):
         try:
-            time.sleep(15)  # 호출 전 대기 (rate limit 방지)
+            time.sleep(15)
             response = claude.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=max_tokens,
@@ -100,26 +113,26 @@ def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
     raise RuntimeError("Claude API 호출 3회 모두 실패")
 
 
-def get_track() -> str:
+def get_track() -> tuple:
     """
     아침(hour < 12) → news
-    저녁 중 3일에 1번 → people
-    나머지 저녁    → edu
+    저녁 홀수일     → edu
+    저녁 짝수일     → tool (툴 사용법, TOOL_LIST 순환)
+    Returns: (track, tool_name or None)
     """
     now = datetime.now()
     if now.hour < 12:
-        return "news"
-    return "people" if now.timetuple().tm_yday % 3 == 0 else "edu"
+        return "news", None
+    if now.timetuple().tm_yday % 2 == 0:
+        tool = TOOL_LIST[(now.timetuple().tm_yday // 2) % len(TOOL_LIST)]
+        return "tool", tool
+    return "edu", None
 
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 이미지 업로드 — base64 → imgur 외부 URL
 # ═════════════════════════════════════════════════════════════════════════════
 def upload_image_to_imgur(image_b64: str) -> str:
-    """
-    base64 이미지를 imgur에 업로드하고 URL 반환 (익명 업로드, 무료).
-    실패 시 빈 문자열 반환.
-    """
     if not image_b64:
         return ""
     try:
@@ -146,7 +159,7 @@ def upload_image_to_imgur(image_b64: str) -> str:
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 1: AI가 오늘의 주제를 스스로 결정
 # ═════════════════════════════════════════════════════════════════════════════
-def decide_topic(track: str) -> dict:
+def decide_topic(track: str, tool_name: str = None) -> dict:
     log.info(f"🧠 [{track.upper()}] 오늘의 주제 AI 자동 결정 중...")
 
     year  = datetime.now().year
@@ -171,23 +184,38 @@ JSON만 출력 (코드블록 없이):
   "search_queries": ["추가로 검색할 쿼리1", "추가로 검색할 쿼리2"]
 }}
 """
-    elif track == "people":
-        trend = search(f"vibe coding influencer developer twitter X {year} trending")
+
+    elif track == "tool":
+        # ✅ 최신 업데이트 중심으로 검색 강화
+        trend1 = search(f"{tool_name} new features update {year} latest release")
+        trend2 = search(f"{tool_name} 신기능 업데이트 {year} 사용법")
+        trend3 = search(f"{tool_name} tips tutorial 초보자 {year}")
         prompt = f"""
-오늘({today}) vibe coding 관련 화제의 인물 정보입니다:
-{trend}
-위 정보를 바탕으로 오늘 소개할 인물을 결정해줘.
-- Andrej Karpathy, Pieter Levels, Marc Lou, Greg Isenberg, Michael Truell 등 포함 고려
-- 최근 활발히 활동 중인 인물 우선
+오늘({today}) 다룰 AI 도구: {tool_name}
+
+최신 업데이트 및 기능 정보:
+[신규 기능/업데이트]
+{trend1}
+[한국어 사용법 트렌드]
+{trend2}
+[튜토리얼/팁]
+{trend3}
+
+위 최신 정보를 바탕으로 '{tool_name}' 사용법 블로그 포스트 주제를 결정해줘.
+- 반드시 {year}년 최신 업데이트/기능 기반으로 작성
+- 코딩 0% 초보자도 따라할 수 있는 실용적인 주제
+- 단순 소개 말고 실제로 써먹을 수 있는 내용
+- 예: "Claude 3.7 새 기능으로 블로그 자동화하는 법", "Perplexity Pro 업데이트 후 달라진 5가지"
 JSON만 출력 (코드블록 없이):
 {{
-  "topic": "인물 이름과 소개 주제",
-  "person_name": "인물 영문 이름",
-  "reason": "이 인물을 선택한 이유",
-  "search_queries": ["인물 검색 쿼리1", "인물 검색 쿼리2"]
+  "topic": "오늘의 구체적인 툴 사용법 주제 (한 문장, 최신 업데이트 반영)",
+  "tool": "{tool_name}",
+  "reason": "이 주제를 선택한 이유",
+  "search_queries": ["추가로 검색할 쿼리1", "추가로 검색할 쿼리2"]
 }}
 """
-    else:
+
+    else:  # edu
         trend1 = search(f"vibe coding tutorial beginner question {year}")
         trend2 = search(f"AI coding tool comparison review {year} Korea")
         prompt = f"""
@@ -260,17 +288,17 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 5. 마무리 + 내일 예고
 분량: 2000~2500자
 """
-    elif track == "people":
-        name = topic_data.get("person_name", "")
+    elif track == "tool":
+        tool = topic_data.get("tool", "AI 도구")
         structure = f"""
-## 인물 트랙 글 구조
-1. "{name} 알아요?" 흥미로운 도입
-2. 이 사람이 누구인지
-3. 최근 AI 코딩으로 만든 것들
-4. 사용하는 도구와 방법
-5. 핵심 교훈 3가지
-6. 마무리 (동기부여)
-분량: 2000~2500자
+## 툴 사용법 트랙 글 구조 ({tool} 최신 버전 기준)
+1. "이런 분들께 딱!" 공감 도입 (이 도구가 필요한 상황)
+2. {tool} 최신 업데이트 핵심 변경사항 요약
+3. 핵심 기능 3가지 실전 사용법 (구체적인 예시 + 단계별 설명)
+4. 초보자가 자주 하는 실수 + 해결법
+5. {year}년 기준 꿀팁 3가지
+6. 마무리 + 다음 툴 예고
+분량: 2500~3000자
 """
     else:
         structure = """
@@ -453,10 +481,10 @@ def main():
     log.info("=" * 60)
 
     try:
-        track = get_track()
-        log.info(f"  📌 트랙: {track.upper()}")
+        track, tool_name = get_track()
+        log.info(f"  📌 트랙: {track.upper()}" + (f" | 툴: {tool_name}" if tool_name else ""))
 
-        topic_data = decide_topic(track)
+        topic_data = decide_topic(track, tool_name)
         deep_news  = collect_deep_news(topic_data)
         post_data  = generate_post(track, topic_data, deep_news)
         best_title = select_best_title(post_data)
