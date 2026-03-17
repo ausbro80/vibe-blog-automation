@@ -3,15 +3,13 @@
 ──────────────────────────────────────────────
 블로그 글 → 카드뉴스 5장 → Instagram 카루셀 포스팅
 디자인: 비비드 그라데이션 (보라 → 핑크)
-이미지 호스팅: Cloudinary (무료)
+이미지 호스팅: Cloudinary (무료, Unsigned 업로드)
 """
 
 import os
 import sys
 import json
 import time
-import base64
-import hashlib
 import logging
 import subprocess
 import requests
@@ -44,21 +42,15 @@ W, H = 1080, 1080  # 인스타 정방형
 # 폰트 설정
 # ═════════════════════════════════════════════════════════════
 def get_font_path(bold: bool = False) -> str:
-    """한글+이모지 지원 폰트 경로 반환"""
-    # GitHub Actions Ubuntu에서 apt-get install fonts-noto-cjk 후 경로들
     candidates = [
         "/usr/share/fonts/truetype/noto/NotoSansCJKkr-Bold.otf" if bold else
         "/usr/share/fonts/truetype/noto/NotoSansCJKkr-Regular.otf",
-
         "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Bold.otf" if bold else
         "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Regular.otf",
-
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc" if bold else
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc" if bold else
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
@@ -66,15 +58,10 @@ def get_font_path(bold: bool = False) -> str:
         if os.path.exists(path):
             log.info(f"  ✅ 폰트 로드: {path}")
             return path
-
-    # 폰트 없으면 강제 설치 시도
     log.warning("  ⚠️ 한글 폰트 없음, 강제 설치 시도...")
     try:
-        subprocess.run(
-            ["apt-get", "install", "-y", "fonts-noto-cjk"],
-            check=True, capture_output=True
-        )
-        # 설치 후 재탐색
+        subprocess.run(["apt-get", "install", "-y", "fonts-noto-cjk"],
+                       check=True, capture_output=True)
         for path in candidates:
             if os.path.exists(path):
                 return path
@@ -87,7 +74,6 @@ def load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     path = get_font_path(bold)
     if path:
         return ImageFont.truetype(path, size)
-    log.warning("  ⚠️ 기본 폰트 사용 (한글 깨질 수 있음)")
     return ImageFont.load_default()
 
 
@@ -119,7 +105,6 @@ def call_claude(prompt: str, max_tokens: int = 1500) -> dict:
 
 
 def draw_gradient(draw: ImageDraw.ImageDraw, w: int, h: int):
-    """보라 → 핑크 그라데이션 배경"""
     for y in range(h):
         t = y / h
         r = int(108 + (200 - 108) * t)
@@ -130,7 +115,6 @@ def draw_gradient(draw: ImageDraw.ImageDraw, w: int, h: int):
 
 def wrap_text(text: str, font: ImageFont.FreeTypeFont,
               max_width: int, draw: ImageDraw.ImageDraw) -> list:
-    """텍스트 줄바꿈"""
     words = text.split()
     lines, current = [], ""
     for word in words:
@@ -149,8 +133,7 @@ def wrap_text(text: str, font: ImageFont.FreeTypeFont,
 # ═════════════════════════════════════════════════════════════
 # STEP 1: 카드뉴스 스크립트 생성
 # ═════════════════════════════════════════════════════════════
-def generate_card_script(blog_title: str, blog_content_html: str,
-                         tags: list) -> dict:
+def generate_card_script(blog_title: str, blog_content_html: str, tags: list) -> dict:
     log.info("📝 카드뉴스 스크립트 생성 중...")
     prompt = f"""
 블로그 글을 인스타그램 카드뉴스 5장으로 변환해줘.
@@ -200,47 +183,32 @@ JSON만 출력 (코드블록 없이):
 def make_card_image(card: dict, card_num: int, total: int) -> bytes:
     img = Image.new("RGB", (W, H))
     draw = ImageDraw.Draw(img)
-
-    # 그라데이션 배경
     draw_gradient(draw, W, H)
 
-    # 반투명 오버레이
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 50))
     img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
     draw = ImageDraw.Draw(img)
 
-    # 폰트 로드
     font_brand = load_font(30, bold=True)
     font_page  = load_font(28)
     font_title = load_font(72, bold=True)
     font_body  = load_font(38)
+    badge_font = load_font(36, bold=True)
 
-    # 브랜드명 (좌상단)
     draw.text((54, 50), "바이브코딩 스쿨", font=font_brand, fill=(255, 255, 255))
 
-    # 페이지 표시 (우상단)
     page_text = f"{card_num} / {total}"
     bbox = draw.textbbox((0, 0), page_text, font=font_page)
     draw.text((W - bbox[2] - 54, 54), page_text, font=font_page, fill=(255, 255, 255))
 
-    # 카드 번호 뱃지 (가운데 상단)
     badge_size = 80
     badge_x = W // 2 - badge_size // 2
     badge_y = 280
-    draw.ellipse(
-        [badge_x, badge_y, badge_x + badge_size, badge_y + badge_size],
-        fill=(255, 255, 255, 60)
-    )
-    badge_font = load_font(36, bold=True)
-    draw.text(
-        (W // 2, badge_y + badge_size // 2),
-        str(card_num),
-        font=badge_font,
-        fill="white",
-        anchor="mm"
-    )
+    draw.ellipse([badge_x, badge_y, badge_x + badge_size, badge_y + badge_size],
+                 fill=(255, 255, 255, 60))
+    draw.text((W // 2, badge_y + badge_size // 2), str(card_num),
+              font=badge_font, fill="white", anchor="mm")
 
-    # 제목
     title = card.get("title", "")
     title_lines = wrap_text(title, font_title, W - 100, draw)
     y = 410
@@ -250,7 +218,6 @@ def make_card_image(card: dict, card_num: int, total: int) -> bytes:
         draw.text((x, y), line, font=font_title, fill="white")
         y += bbox[3] - bbox[1] + 14
 
-    # 본문
     body = card.get("body", "")
     if body:
         body_lines = wrap_text(body, font_body, W - 140, draw)
@@ -261,11 +228,9 @@ def make_card_image(card: dict, card_num: int, total: int) -> bytes:
             draw.text((x, y), line, font=font_body, fill=(255, 255, 255))
             y += bbox[3] - bbox[1] + 10
 
-    # 하단 구분선
     bar_y = H - 80
     draw.rounded_rectangle([54, bar_y, W - 54, bar_y + 5], radius=3, fill=(255, 255, 255))
 
-    # 점 인디케이터
     dot_r = 7
     dot_gap = 22
     dot_start_x = W // 2 - (total * dot_gap) // 2
@@ -284,31 +249,51 @@ def make_card_image(card: dict, card_num: int, total: int) -> bytes:
 
 
 # ═════════════════════════════════════════════════════════════
-# STEP 3: Cloudinary 업로드
+# STEP 3: Cloudinary 업로드 (Unsigned → 완전 공개 URL)
 # ═════════════════════════════════════════════════════════════
 def upload_to_cloudinary(image_bytes: bytes, public_id: str) -> str:
     log.info(f"  ☁️  Cloudinary 업로드: {public_id}")
 
-    timestamp = str(int(time.time()))
-    params_to_sign = f"public_id={public_id}&timestamp={timestamp}"
-    signature = hashlib.sha1(
-        (params_to_sign + CLOUDINARY_API_SECRET).encode()
-    ).hexdigest()
-
+    # ✅ Unsigned 업로드 방식 (인증 없이 공개 URL 생성)
     resp = requests.post(
         f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD_NAME}/image/upload",
         data={
+            "upload_preset": "ml_default",  # Cloudinary 기본 unsigned preset
             "public_id": public_id,
-            "timestamp": timestamp,
-            "api_key": CLOUDINARY_API_KEY,
-            "signature": signature,
         },
         files={"file": ("card.png", image_bytes, "image/png")},
         timeout=60,
     )
+
+    # Unsigned preset 실패 시 Signed 방식으로 fallback
+    if resp.status_code != 200:
+        log.warning("  ⚠️ Unsigned 업로드 실패, Signed 방식으로 재시도...")
+        import hashlib
+        timestamp = str(int(time.time()))
+        params_to_sign = f"public_id={public_id}&timestamp={timestamp}"
+        signature = hashlib.sha1(
+            (params_to_sign + CLOUDINARY_API_SECRET).encode()
+        ).hexdigest()
+        resp = requests.post(
+            f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD_NAME}/image/upload",
+            data={
+                "public_id": public_id,
+                "timestamp": timestamp,
+                "api_key": CLOUDINARY_API_KEY,
+                "signature": signature,
+            },
+            files={"file": ("card.png", image_bytes, "image/png")},
+            timeout=60,
+        )
+
     resp.raise_for_status()
-    url = resp.json()["secure_url"]
-    log.info(f"    ✅ 업로드 완료: {url[:60]}...")
+    result = resp.json()
+
+    # ✅ secure_url 대신 일반 url 사용 (Instagram이 접근 가능한 URL)
+    url = result.get("url") or result.get("secure_url")
+    # https로 강제 변환
+    url = url.replace("http://", "https://")
+    log.info(f"    ✅ 업로드 완료: {url[:70]}...")
     return url
 
 
@@ -317,13 +302,11 @@ def upload_to_cloudinary(image_bytes: bytes, public_id: str) -> str:
 # ═════════════════════════════════════════════════════════════
 def post_carousel_to_instagram(image_urls: list, caption: str) -> str:
     log.info("📤 Instagram 카루셀 포스팅 중...")
-
     base = "https://graph.instagram.com/v25.0"
 
-    # 1) 각 이미지 미디어 컨테이너 생성
     children_ids = []
     for i, url in enumerate(image_urls):
-        log.info(f"  🖼️  미디어 컨테이너 {i+1}/{len(image_urls)}")
+        log.info(f"  🖼️  미디어 컨테이너 {i+1}/{len(image_urls)}: {url[:60]}")
         resp = requests.post(
             f"{base}/{INSTAGRAM_ACCOUNT_ID}/media",
             json={
@@ -333,11 +316,12 @@ def post_carousel_to_instagram(image_urls: list, caption: str) -> str:
             },
             timeout=30,
         )
-        resp.raise_for_status()
+        if not resp.ok:
+            log.error(f"  ❌ 미디어 컨테이너 생성 실패: {resp.status_code} {resp.text}")
+            resp.raise_for_status()
         children_ids.append(resp.json()["id"])
         time.sleep(2)
 
-    # 2) 카루셀 컨테이너 생성
     log.info("  📦 카루셀 컨테이너 생성 중...")
     resp = requests.post(
         f"{base}/{INSTAGRAM_ACCOUNT_ID}/media",
@@ -352,7 +336,6 @@ def post_carousel_to_instagram(image_urls: list, caption: str) -> str:
     resp.raise_for_status()
     carousel_id = resp.json()["id"]
 
-    # 3) 게시
     log.info("  🚀 게시 중...")
     time.sleep(5)
     resp = requests.post(
@@ -378,13 +361,11 @@ def post_instagram(blog_title: str, blog_content_html: str, tags: list) -> str:
     log.info("📸 Instagram 카드뉴스 자동화 시작")
     log.info("=" * 50)
 
-    # 1. 스크립트 생성
     script  = generate_card_script(blog_title, blog_content_html, tags)
     cards   = script["cards"]
     caption = script["caption"]
     total   = len(cards)
 
-    # 2. 카드 이미지 생성 + Cloudinary 업로드
     prefix = datetime.now().strftime("%Y%m%d%H%M")
     image_urls = []
     for card in cards:
@@ -395,7 +376,6 @@ def post_instagram(blog_title: str, blog_content_html: str, tags: list) -> str:
         image_urls.append(url)
         time.sleep(1)
 
-    # 3. 인스타 포스팅
     post_url = post_carousel_to_instagram(image_urls, caption)
 
     log.info("=" * 50)
