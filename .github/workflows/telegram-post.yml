@@ -1,0 +1,59 @@
+name: 📱 텔레그램 트리거 포스팅
+on:
+  workflow_dispatch:
+    inputs:
+      custom_url:
+        description: "포스팅할 URL"
+        required: true
+        type: string
+      dry_run:
+        description: "Dry run (테스트용)"
+        required: false
+        default: "false"
+        type: boolean
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+jobs:
+  post-from-url:
+    name: URL 기반 블로그 글 생성 및 포스팅
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: 📥 코드 체크아웃
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: 🐍 Python 3.11 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: 📦 패키지 설치
+        run: pip install -r requirements.txt
+      - name: 🔤 한글 폰트 설치
+        run: sudo apt-get install -y fonts-noto-cjk
+      - name: 🚀 URL 기반 포스팅 실행
+        env:
+          ANTHROPIC_API_KEY:        ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY:           ${{ secrets.GEMINI_API_KEY }}
+          BLOGGER_BLOG_ID:          ${{ secrets.BLOGGER_BLOG_ID }}
+          GOOGLE_CREDENTIALS_JSON:  ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          INSTAGRAM_ACCESS_TOKEN:   ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          INSTAGRAM_ACCOUNT_ID:     ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
+          CLOUDINARY_CLOUD_NAME:    ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY:       ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET:    ${{ secrets.CLOUDINARY_API_SECRET }}
+          TELEGRAM_BOT_TOKEN:       ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:         ${{ secrets.TELEGRAM_CHAT_ID }}
+          CUSTOM_URL:               ${{ inputs.custom_url }}
+          DRY_RUN:                  ${{ inputs.dry_run || 'false' }}
+        run: python src/url_post.py
+      - name: ♻️ 저장소 활성 유지
+        run: |
+          git config user.email "action@github.com"
+          git config user.name "GitHub Action"
+          git pull --rebase origin main
+          git commit --allow-empty -m "keep alive $(date '+%Y-%m-%d %H:%M')"
+          git push
