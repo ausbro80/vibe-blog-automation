@@ -407,9 +407,6 @@ def get_blogger_service():
 def post_to_blogger(title: str, post_data: dict, image_b64: str) -> str:
     log.info("📤 Blogger 포스팅 중...")
 
-    # ── 이미지 URL 결정 ──────────────────────────────────────────
-    # 1순위: Blogger 앨범에 업로드한 외부 URL (대표 이미지 자동 인식됨)
-    # 2순위: placehold.co 대체 이미지
     image_url = upload_image_to_imgur(image_b64)
     if not image_url:
         image_url = "https://placehold.co/1200x630/6366f1/ffffff?text=Vibe+Coding+School"
@@ -467,12 +464,24 @@ def main():
         image_prompt = generate_image_prompt(best_title, post_data)
         image_b64    = generate_thumbnail(image_prompt)
 
-        post_url = post_to_blogger(best_title, post_data, image_b64)
+        blog_url = post_to_blogger(best_title, post_data, image_b64)
+
+        # ✅ 블로그 포스팅 완료 후 인스타그램 카드뉴스 자동 포스팅
+        try:
+            from instagram import post_instagram
+            insta_url = post_instagram(
+                blog_title=best_title,
+                blog_content_html=post_data["content_html"],
+                tags=post_data.get("tags", []),
+            )
+            log.info(f"  📸 인스타 포스팅 완료: {insta_url}")
+        except Exception as e:
+            log.warning(f"  ⚠️ 인스타 포스팅 실패 (블로그는 정상): {e}")
 
         log.info("=" * 60)
         log.info("🎉 전체 파이프라인 완료!")
         log.info(f"   트랙: {track.upper()} | 주제: {topic_data['topic']}")
-        log.info(f"   URL: {post_url}")
+        log.info(f"   블로그 URL: {blog_url}")
         log.info("=" * 60)
 
     except Exception as e:
