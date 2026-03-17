@@ -2,7 +2,7 @@
 바이브코딩 스쿨 — 텔레그램 봇 핸들러
 ──────────────────────────────────────────────
 텔레그램에서 URL 받으면 → GitHub Actions 트리거 → 블로그 + 인스타 포스팅
-중복 처리 방지: last_update_id.txt 로 처리된 메시지 추적
+중복 방지: update_id + URL 둘 다 체크
 """
 
 import os
@@ -23,8 +23,8 @@ TELEGRAM_CHAT_ID   = os.environ["TELEGRAM_CHAT_ID"]
 GH_PAT             = os.environ["GH_PAT"]
 GH_REPO            = os.environ.get("GH_REPO", "")
 
-# 마지막 처리한 update_id 저장 파일
-LAST_ID_FILE = "last_update_id.txt"
+LAST_ID_FILE   = "last_update_id.txt"
+POSTED_URL_FILE = "posted_urls.txt"
 
 
 # ═════════════════════════════════════════════════════════════
@@ -45,7 +45,6 @@ def send_telegram(text: str):
 # 마지막 처리 ID 관리
 # ═════════════════════════════════════════════════════════════
 def get_last_update_id() -> int:
-    """저장된 마지막 update_id 읽기"""
     try:
         if os.path.exists(LAST_ID_FILE):
             with open(LAST_ID_FILE, "r") as f:
@@ -55,24 +54,40 @@ def get_last_update_id() -> int:
     return 0
 
 
-def save_last_update_id(update_id: int):
-    """마지막 처리한 update_id 저장"""
+# ═════════════════════════════════════════════════════════════
+# 처리된 URL 관리
+# ═════════════════════════════════════════════════════════════
+def get_posted_urls() -> set:
+    try:
+        if os.path.exists(POSTED_URL_FILE):
+            with open(POSTED_URL_FILE, "r") as f:
+                return set(line.strip() for line in f.readlines() if line.strip())
+    except Exception:
+        pass
+    return set()
+
+
+def save_state(update_id: int, url: str = None):
+    """update_id + URL 저장 후 GitHub 커밋"""
     with open(LAST_ID_FILE, "w") as f:
         f.write(str(update_id))
-    # GitHub에 커밋해서 다음 실행 때도 기억
-    os.system(f'git config user.email "action@github.com"')
-    os.system(f'git config user.name "GitHub Action"')
-    os.system(f'git add {LAST_ID_FILE}')
-    os.system(f'git commit -m "update last_update_id: {update_id}"')
-    os.system(f'git pull --rebase origin main')
-    os.system(f'git push')
+
+    if url:
+        with open(POSTED_URL_FILE, "a") as f:
+            f.write(url + "\n")
+
+    os.system('git config user.email "action@github.com"')
+    os.system('git config user.name "GitHub Action"')
+    os.system(f'git add {LAST_ID_FILE} {POSTED_URL_FILE}')
+    os.system(f'git commit -m "bot: update state (id={update_id})"')
+    os.system('git pull --rebase origin main')
+    os.system('git push')
 
 
 # ═════════════════════════════════════════════════════════════
 # 새 메시지 가져오기
 # ═════════════════════════════════════════════════════════════
 def get_new_messages(last_id: int) -> list:
-    """last_id 이후의 새 메시지만 가져오기"""
     resp = requests.get(
         f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates",
         params={"offset": last_id + 1, "limit": 10, "timeout": 0},
@@ -117,8 +132,10 @@ def main():
     log.info("📱 텔레그램 봇 메시지 체크")
     log.info("=" * 50)
 
-    last_id  = get_last_update_id()
+    last_id     = get_last_update_id()
+    posted_urls = get_posted_urls()
     log.info(f"  마지막 처리 ID: {last_id}")
+    log.info(f"  처리된 URL 수: {len(posted_urls)}")
 
     updates = get_new_messages(last_id)
     if not updates:
@@ -136,11 +153,21 @@ def main():
         # 내 채팅에서 온 메시지인지 확인 (보안)
         if chat_id != TELEGRAM_CHAT_ID:
             log.warning(f"  ⚠️ 다른 사용자 무시: {chat_id}")
-            save_last_update_id(update_id)
+            save_state(update_id)
             continue
 
         # URL 여부 확인
         if text.startswith("http://") or text.startswith("https://"):
+
+            # ✅ 중복 URL 체크
+            if text in posted_urls:
+                log.info(f"  ⚠️ 이미 처리된 URL, 스킵: {text[:60]}")
+                send_telegram(
+                    f"⚠️ 이미 포스팅된 링크예요!\n{text[:60]}...\n\n다른 링크를 보내주세요 😊"
+                )
+                save_state(update_id)
+                continue
+
             send_telegram(
                 f"🔍 링크 확인했어요!\n"
                 f"{text[:60]}...\n\n"
@@ -148,13 +175,14 @@ def main():
                 f"완료되면 알려드릴게요 ✍️"
             )
             success = trigger_github_actions(text)
-            if not success:
+            if success:
+                save_state(update_id, url=text)  # ✅ URL도 함께 저장
+            else:
                 send_telegram("❌ 트리거 실패했어요. 잠시 후 다시 시도해주세요.")
+                save_state(update_id)
         else:
             send_telegram("🔗 URL을 보내주세요!\n예: https://openai.com/blog/...")
-
-        # 처리 완료 → ID 저장
-        save_last_update_id(update_id)
+            save_state(update_id)
 
 
 if __name__ == "__main__":
