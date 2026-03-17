@@ -51,41 +51,53 @@ def extract_text(response) -> str:
 def search(query: str, max_tokens: int = 2000) -> str:
     """단일 쿼리 웹서치 후 텍스트 반환"""
     today = datetime.now().strftime("%Y년 %m월 %d일")
-    try:
-        response = claude.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=max_tokens,
-            tools=[{"type": "web_search_20250305", "name": "web_search"}],
-            tool_choice={"type": "auto"},
-            messages=[{
-                "role": "user",
-                "content": f"오늘({today}) 기준으로 '{query}'를 검색하고 핵심 내용을 한국어로 요약해줘.",
-            }],
-        )
-        text = extract_text(response)
-        time.sleep(5)
-        return text
-    except Exception as e:
-        log.warning(f"  ⚠️ 검색 실패 '{query}': {e}")
-        time.sleep(3)
-        return ""
+    for attempt in range(3):
+        try:
+            time.sleep(15)  # 호출 전 대기 (rate limit 방지)
+            response = claude.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=max_tokens,
+                tools=[{"type": "web_search_20250305", "name": "web_search"}],
+                tool_choice={"type": "auto"},
+                messages=[{
+                    "role": "user",
+                    "content": f"오늘({today}) 기준으로 '{query}'를 검색하고 핵심 내용을 한국어로 요약해줘.",
+                }],
+            )
+            text = extract_text(response)
+            return text
+        except Exception as e:
+            wait = 30 * (attempt + 1)
+            log.warning(f"  ⚠️ 검색 실패 '{query}' (시도 {attempt+1}/3): {e}")
+            log.warning(f"  ⏳ {wait}초 대기 후 재시도...")
+            time.sleep(wait)
+    return ""
 
 
 def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
-    """Claude API 호출 + JSON 파싱"""
-    response = claude.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=max_tokens,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = response.content[0].text.strip()
-    if "```" in raw:
-        for part in raw.split("```"):
-            part = part.strip().lstrip("json").strip()
-            if part.startswith("{"):
-                raw = part
-                break
-    return json.loads(raw.strip())
+    """Claude API 호출 + JSON 파싱 (rate limit 재시도 포함)"""
+    for attempt in range(3):
+        try:
+            time.sleep(15)  # 호출 전 대기 (rate limit 방지)
+            response = claude.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = response.content[0].text.strip()
+            if "```" in raw:
+                for part in raw.split("```"):
+                    part = part.strip().lstrip("json").strip()
+                    if part.startswith("{"):
+                        raw = part
+                        break
+            return json.loads(raw.strip())
+        except Exception as e:
+            wait = 30 * (attempt + 1)
+            log.warning(f"  ⚠️ Claude 호출 실패 (시도 {attempt+1}/3): {e}")
+            log.warning(f"  ⏳ {wait}초 대기 후 재시도...")
+            time.sleep(wait)
+    raise RuntimeError("Claude API 호출 3회 모두 실패")
 
 
 def get_track() -> str:
