@@ -14,7 +14,6 @@ import json
 import time
 import base64
 import logging
-import re
 from datetime import datetime
 
 import anthropic
@@ -102,57 +101,33 @@ def get_track() -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 이미지 업로드 — base64 → Blogger 이미지 URL
+# 이미지 업로드 — base64 → imgur 외부 URL
 # ═════════════════════════════════════════════════════════════════════════════
-def upload_image_to_blogger(image_b64: str, title: str) -> str:
+def upload_image_to_imgur(image_b64: str) -> str:
     """
-    base64 이미지를 Blogger 블로그 앨범에 업로드하고 URL 반환.
-    실패 시 빈 문자열 반환 (placehold fallback 사용).
+    base64 이미지를 imgur에 업로드하고 URL 반환 (익명 업로드, 무료).
+    실패 시 빈 문자열 반환.
     """
     if not image_b64:
         return ""
     try:
-        log.info("☁️  이미지 Blogger 앨범 업로드 중...")
-        creds_info = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
-        creds = Credentials(
-            token=creds_info["token"],
-            refresh_token=creds_info["refresh_token"],
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=creds_info["client_id"],
-            client_secret=creds_info["client_secret"],
+        log.info("☁️  이미지 imgur 업로드 중...")
+        resp = requests.post(
+            "https://api.imgur.com/3/image",
+            headers={"Authorization": "Client-ID 546c25a59c58ad7"},
+            data={"image": image_b64, "type": "base64"},
+            timeout=60,
         )
-        from google.auth.transport.requests import Request as GoogleRequest
-        creds.refresh(GoogleRequest())
-
-        img_bytes = base64.b64decode(image_b64)
-
-        # ✅ 수정: 한글/비ASCII 문자 제거 후 ASCII만 남기기
-        safe_title = re.sub(r'[^\x00-\x7F]', '', title)          # 비ASCII 제거
-        safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', safe_title) # 특수문자 → _
-        safe_title = safe_title[:50].strip('_') or "thumbnail"    # 길이 제한 + 빈 경우 fallback
-
-        upload_url = "https://picasaweb.google.com/data/feed/api/user/default/albumid/default"
-        headers = {
-            "Authorization": f"Bearer {creds.token}",
-            "Content-Type": "image/png",
-            "Slug": f"{safe_title}.png",   # ✅ 이제 ASCII만 포함
-            "GData-Version": "2",
-        }
-        resp = requests.post(upload_url, headers=headers, data=img_bytes, timeout=60)
         resp.raise_for_status()
-
-        # XML에서 이미지 URL 파싱
-        match = re.search(r"<media:content[^>]+url='([^']+)'", resp.text)
-        if not match:
-            match = re.search(r'url="(https://[^"]+\.png[^"]*)"', resp.text)
-        if match:
-            img_url = match.group(1)
-            log.info(f"  ✅ 이미지 업로드 완료: {img_url[:60]}...")
+        data = resp.json()
+        if data.get("success"):
+            img_url = data["data"]["link"]
+            log.info(f"  ✅ imgur 업로드 완료: {img_url}")
             return img_url
-        log.warning("  ⚠️ 이미지 URL 파싱 실패")
+        log.warning(f"  ⚠️ imgur 응답 실패: {data}")
         return ""
     except Exception as e:
-        log.warning(f"  ⚠️ 이미지 업로드 실패 ({e}), placehold 사용")
+        log.warning(f"  ⚠️ imgur 업로드 실패 ({e}), placehold 사용")
         return ""
 
 
@@ -420,7 +395,10 @@ def get_blogger_service():
 def post_to_blogger(title: str, post_data: dict, image_b64: str) -> str:
     log.info("📤 Blogger 포스팅 중...")
 
-    image_url = upload_image_to_blogger(image_b64, title)
+    # ── 이미지 URL 결정 ──────────────────────────────────────────
+    # 1순위: Blogger 앨범에 업로드한 외부 URL (대표 이미지 자동 인식됨)
+    # 2순위: placehold.co 대체 이미지
+    image_url = upload_image_to_imgur(image_b64)
     if not image_url:
         image_url = "https://placehold.co/1200x630/6366f1/ffffff?text=Vibe+Coding+School"
         log.info("  ℹ️  placehold 이미지 사용")
