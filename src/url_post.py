@@ -52,6 +52,31 @@ def send_telegram(text: str):
 # ═════════════════════════════════════════════════════════════
 # 유틸
 # ═════════════════════════════════════════════════════════════
+def extract_text(response) -> str:
+    """Claude 응답에서 텍스트 안전하게 추출 (웹서치 포함)"""
+    texts = []
+    for block in response.content:
+        if hasattr(block, "text") and isinstance(block.text, str) and block.text.strip():
+            texts.append(block.text.strip())
+    return "\n".join(texts)
+
+
+def parse_json_from_text(raw: str) -> dict:
+    """텍스트에서 JSON 파싱"""
+    if "```" in raw:
+        for part in raw.split("```"):
+            part = part.strip().lstrip("json").strip()
+            if part.startswith("{"):
+                raw = part
+                break
+    # JSON 블록만 추출
+    start = raw.find("{")
+    end   = raw.rfind("}") + 1
+    if start != -1 and end > start:
+        raw = raw[start:end]
+    return json.loads(raw.strip())
+
+
 def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
     for attempt in range(3):
         try:
@@ -61,14 +86,8 @@ def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = response.content[0].text.strip()
-            if "```" in raw:
-                for part in raw.split("```"):
-                    part = part.strip().lstrip("json").strip()
-                    if part.startswith("{"):
-                        raw = part
-                        break
-            return json.loads(raw.strip())
+            raw = extract_text(response)
+            return parse_json_from_text(raw)
         except Exception as e:
             wait = 20 * (attempt + 1)
             log.warning(f"  ⚠️ Claude 호출 실패 (시도 {attempt+1}/3): {e}")
@@ -84,7 +103,6 @@ def generate_post_from_url(url: str) -> dict:
     year  = datetime.now().year
     today = datetime.now().strftime("%Y년 %m월 %d일")
 
-    # Claude로 URL 내용 읽기 + 블로그 글 생성 한 번에
     prompt = f"""
 아래 URL의 내용을 읽고 '바이브코딩 스쿨' 블로그 포스트를 작성해줘.
 
@@ -117,33 +135,27 @@ URL: {url}
   "content_html": "완성된 HTML 본문 (h2 h3 p ul li strong 사용)"
 }}
 """
-    # 웹서치 도구로 URL 내용 읽기
-    response = claude.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=4000,
-        tools=[{"type": "web_search_20250305", "name": "web_search"}],
-        tool_choice={"type": "auto"},
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    # 텍스트 추출
-    raw = ""
-    for block in response.content:
-        if hasattr(block, "text") and block.text.strip():
-            raw = block.text.strip()
-            break
-
-    if not raw:
-        raise ValueError("URL 내용 읽기 실패")
-
-    if "```" in raw:
-        for part in raw.split("```"):
-            part = part.strip().lstrip("json").strip()
-            if part.startswith("{"):
-                raw = part
-                break
-
-    return json.loads(raw.strip())
+    # 웹서치로 URL 내용 읽기
+    for attempt in range(3):
+        try:
+            time.sleep(10)
+            response = claude.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=4000,
+                tools=[{"type": "web_search_20250305", "name": "web_search"}],
+                tool_choice={"type": "auto"},
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = extract_text(response)
+            if not raw:
+                raise ValueError("응답 텍스트 없음")
+            log.info(f"  ✅ URL 내용 분석 완료 ({len(raw)}자)")
+            return parse_json_from_text(raw)
+        except Exception as e:
+            wait = 20 * (attempt + 1)
+            log.warning(f"  ⚠️ URL 분석 실패 (시도 {attempt+1}/3): {e}")
+            time.sleep(wait)
+    raise RuntimeError("URL 내용 읽기 3회 모두 실패")
 
 
 # ═════════════════════════════════════════════════════════════
@@ -161,7 +173,7 @@ def select_best_title(post_data: dict) -> str:
             "content": f"한국 구글 SEO와 클릭률 관점에서 가장 효과적인 제목 1개만 출력 (번호 없이):\n\n{candidates}",
         }],
     )
-    return response.content[0].text.strip()
+    return extract_text(response)
 
 
 # ═════════════════════════════════════════════════════════════
@@ -169,19 +181,16 @@ def select_best_title(post_data: dict) -> str:
 # ═════════════════════════════════════════════════════════════
 def generate_thumbnail(title: str, tags: list) -> str:
     log.info("🎨 썸네일 생성 중...")
-    tags_str = ", ".join(tags)
     try:
-        # 프롬프트 생성
         response = claude.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=100,
             messages=[{
                 "role": "user",
-                "content": f"블로그 썸네일용 영문 이미지 프롬프트 50단어 이내. 제목: {title}, 태그: {tags_str}. 밝고 친근한 테크 일러스트, 텍스트 없음, 16:9. 프롬프트만:"
+                "content": f"블로그 썸네일용 영문 이미지 프롬프트 50단어 이내. 제목: {title}. 밝고 친근한 테크 일러스트, 텍스트 없음, 16:9. 프롬프트만:"
             }],
         )
-        img_prompt = response.content[0].text.strip()
-
+        img_prompt = extract_text(response)
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
             f"gemini-2.5-flash-image:generateContent?key={GEMINI_API_KEY}"
@@ -192,8 +201,7 @@ def generate_thumbnail(title: str, tags: list) -> str:
         }
         resp = requests.post(url, json=payload, timeout=90)
         resp.raise_for_status()
-        data = resp.json()
-        for part in data["candidates"][0]["content"]["parts"]:
+        for part in resp.json()["candidates"][0]["content"]["parts"]:
             if "inlineData" in part:
                 log.info("  ✅ 썸네일 생성 완료")
                 return part["inlineData"]["data"]
@@ -289,6 +297,7 @@ def main():
         blog_url = post_to_blogger(best_title, post_data, image_b64)
 
         # 4. 인스타 포스팅
+        insta_url = None
         try:
             from instagram import post_instagram
             insta_url = post_instagram(
@@ -299,14 +308,9 @@ def main():
             log.info(f"  📸 인스타 포스팅 완료: {insta_url}")
         except Exception as e:
             log.warning(f"  ⚠️ 인스타 포스팅 실패: {e}")
-            insta_url = None
 
         # 5. 텔레그램 완료 알림
-        msg = f"""✅ 포스팅 완료!
-
-📝 제목: {best_title}
-
-🌐 블로그: {blog_url}"""
+        msg = f"✅ 포스팅 완료!\n\n📝 제목: {best_title}\n\n🌐 블로그: {blog_url}"
         if insta_url:
             msg += f"\n📸 인스타: {insta_url}"
         send_telegram(msg)
