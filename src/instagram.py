@@ -11,11 +11,14 @@ import sys
 import json
 import time
 import base64
+import hashlib
 import logging
+import subprocess
 import requests
 import anthropic
 
 from io import BytesIO
+from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 
 logging.basicConfig(
@@ -38,38 +41,81 @@ W, H = 1080, 1080  # 인스타 정방형
 
 
 # ═════════════════════════════════════════════════════════════
-# 유틸
+# 폰트 설정
 # ═════════════════════════════════════════════════════════════
-def call_claude(prompt: str, max_tokens: int = 1500) -> dict:
-    response = claude.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=max_tokens,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = response.content[0].text.strip()
-    if "```" in raw:
-        for part in raw.split("```"):
-            part = part.strip().lstrip("json").strip()
-            if part.startswith("{"):
-                raw = part
-                break
-    return json.loads(raw.strip())
+def get_font_path(bold: bool = False) -> str:
+    """한글+이모지 지원 폰트 경로 반환"""
+    # GitHub Actions Ubuntu에서 apt-get install fonts-noto-cjk 후 경로들
+    candidates = [
+        "/usr/share/fonts/truetype/noto/NotoSansCJKkr-Bold.otf" if bold else
+        "/usr/share/fonts/truetype/noto/NotoSansCJKkr-Regular.otf",
 
-
-def load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    """시스템 한글 폰트 로드 (GitHub Actions Ubuntu 환경)"""
-    font_paths = [
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc" if bold else
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Bold.otf" if bold else
         "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Regular.otf",
+
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc" if bold else
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc" if bold else
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
-    for path in font_paths:
+    for path in candidates:
         if os.path.exists(path):
-            return ImageFont.truetype(path, size)
+            log.info(f"  ✅ 폰트 로드: {path}")
+            return path
+
+    # 폰트 없으면 강제 설치 시도
+    log.warning("  ⚠️ 한글 폰트 없음, 강제 설치 시도...")
+    try:
+        subprocess.run(
+            ["apt-get", "install", "-y", "fonts-noto-cjk"],
+            check=True, capture_output=True
+        )
+        # 설치 후 재탐색
+        for path in candidates:
+            if os.path.exists(path):
+                return path
+    except Exception as e:
+        log.warning(f"  ⚠️ 폰트 설치 실패: {e}")
+    return None
+
+
+def load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
+    path = get_font_path(bold)
+    if path:
+        return ImageFont.truetype(path, size)
+    log.warning("  ⚠️ 기본 폰트 사용 (한글 깨질 수 있음)")
     return ImageFont.load_default()
+
+
+# ═════════════════════════════════════════════════════════════
+# 유틸
+# ═════════════════════════════════════════════════════════════
+def call_claude(prompt: str, max_tokens: int = 1500) -> dict:
+    for attempt in range(3):
+        try:
+            time.sleep(10)
+            response = claude.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = response.content[0].text.strip()
+            if "```" in raw:
+                for part in raw.split("```"):
+                    part = part.strip().lstrip("json").strip()
+                    if part.startswith("{"):
+                        raw = part
+                        break
+            return json.loads(raw.strip())
+        except Exception as e:
+            wait = 20 * (attempt + 1)
+            log.warning(f"  ⚠️ Claude 호출 실패 (시도 {attempt+1}/3): {e}")
+            time.sleep(wait)
+    raise RuntimeError("Claude API 호출 3회 모두 실패")
 
 
 def draw_gradient(draw: ImageDraw.ImageDraw, w: int, h: int):
@@ -84,6 +130,7 @@ def draw_gradient(draw: ImageDraw.ImageDraw, w: int, h: int):
 
 def wrap_text(text: str, font: ImageFont.FreeTypeFont,
               max_width: int, draw: ImageDraw.ImageDraw) -> list:
+    """텍스트 줄바꿈"""
     words = text.split()
     lines, current = [], ""
     for word in words:
@@ -118,27 +165,28 @@ def generate_card_script(blog_title: str, blog_content_html: str,
 - 카드 2~4 (본문): 핵심 내용 각 1가지씩 (제목 + 설명 2~3줄)
 - 카드 5 (마무리): 핵심 요약 + "블로그에서 더 보기" 유도
 
-## 규칙
-- 각 카드 텍스트는 짧고 임팩트 있게 (제목 20자 이내, 본문 60자 이내)
-- 이모지 적극 활용
+## 중요 규칙
+- 이모지는 절대 사용하지 마세요 (렌더링 문제 있음)
+- 제목: 15자 이내로 짧게
+- 본문: 50자 이내
 - 독자: 코딩 0% 일반인
-- 말투: 친근하고 쉽게
+- 말투: 친근하고 쉽게 (~해요체)
 
 ## 캡션 규칙
-- 200자 이내 핵심 내용
+- 200자 이내
 - 줄바꿈 활용
-- 해시태그 15개
+- 해시태그 15개 (이모지 없이)
 
 JSON만 출력 (코드블록 없이):
 {{
   "cards": [
-    {{"card_num": 1, "title": "훅 제목", "body": "", "emoji": "🔥"}},
-    {{"card_num": 2, "title": "핵심1", "body": "설명", "emoji": "💡"}},
-    {{"card_num": 3, "title": "핵심2", "body": "설명", "emoji": "🚀"}},
-    {{"card_num": 4, "title": "핵심3", "body": "설명", "emoji": "✅"}},
-    {{"card_num": 5, "title": "마무리", "body": "블로그 링크 유도", "emoji": "📌"}}
+    {{"card_num": 1, "title": "훅 제목", "body": ""}},
+    {{"card_num": 2, "title": "핵심1", "body": "설명"}},
+    {{"card_num": 3, "title": "핵심2", "body": "설명"}},
+    {{"card_num": 4, "title": "핵심3", "body": "설명"}},
+    {{"card_num": 5, "title": "마무리", "body": "블로그 링크 유도"}}
   ],
-  "caption": "인스타 캡션 (해시태그 포함)"
+  "caption": "인스타 캡션 (해시태그 포함, 이모지 없이)"
 }}
 """
     script = call_claude(prompt, max_tokens=1500)
@@ -161,31 +209,41 @@ def make_card_image(card: dict, card_num: int, total: int) -> bytes:
     img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
     draw = ImageDraw.Draw(img)
 
-    font_brand = load_font(28, bold=True)
-    font_page  = load_font(26)
-    font_emoji = load_font(80)
-    font_title = load_font(64, bold=True)
-    font_body  = load_font(36)
+    # 폰트 로드
+    font_brand = load_font(30, bold=True)
+    font_page  = load_font(28)
+    font_title = load_font(72, bold=True)
+    font_body  = load_font(38)
 
     # 브랜드명 (좌상단)
-    draw.text((54, 50), "바이브코딩 스쿨", font=font_brand,
-              fill=(255, 255, 255))
+    draw.text((54, 50), "바이브코딩 스쿨", font=font_brand, fill=(255, 255, 255))
 
     # 페이지 표시 (우상단)
     page_text = f"{card_num} / {total}"
     bbox = draw.textbbox((0, 0), page_text, font=font_page)
-    draw.text((W - bbox[2] - 54, 54), page_text, font=font_page,
-              fill=(255, 255, 255))
+    draw.text((W - bbox[2] - 54, 54), page_text, font=font_page, fill=(255, 255, 255))
 
-    # 이모지
-    emoji = card.get("emoji", "")
-    draw.text((W // 2, 330), emoji, font=font_emoji,
-              fill="white", anchor="mm")
+    # 카드 번호 뱃지 (가운데 상단)
+    badge_size = 80
+    badge_x = W // 2 - badge_size // 2
+    badge_y = 280
+    draw.ellipse(
+        [badge_x, badge_y, badge_x + badge_size, badge_y + badge_size],
+        fill=(255, 255, 255, 60)
+    )
+    badge_font = load_font(36, bold=True)
+    draw.text(
+        (W // 2, badge_y + badge_size // 2),
+        str(card_num),
+        font=badge_font,
+        fill="white",
+        anchor="mm"
+    )
 
     # 제목
     title = card.get("title", "")
-    title_lines = wrap_text(title, font_title, W - 120, draw)
-    y = 460
+    title_lines = wrap_text(title, font_title, W - 100, draw)
+    y = 410
     for line in title_lines:
         bbox = draw.textbbox((0, 0), line, font=font_title)
         x = (W - (bbox[2] - bbox[0])) // 2
@@ -196,18 +254,16 @@ def make_card_image(card: dict, card_num: int, total: int) -> bytes:
     body = card.get("body", "")
     if body:
         body_lines = wrap_text(body, font_body, W - 140, draw)
-        y += 20
+        y += 24
         for line in body_lines:
             bbox = draw.textbbox((0, 0), line, font=font_body)
             x = (W - (bbox[2] - bbox[0])) // 2
-            draw.text((x, y), line, font=font_body,
-                      fill=(255, 255, 255))
+            draw.text((x, y), line, font=font_body, fill=(255, 255, 255))
             y += bbox[3] - bbox[1] + 10
 
     # 하단 구분선
     bar_y = H - 80
-    draw.rounded_rectangle([54, bar_y, W - 54, bar_y + 5],
-                            radius=3, fill=(255, 255, 255))
+    draw.rounded_rectangle([54, bar_y, W - 54, bar_y + 5], radius=3, fill=(255, 255, 255))
 
     # 점 인디케이터
     dot_r = 7
@@ -217,12 +273,10 @@ def make_card_image(card: dict, card_num: int, total: int) -> bytes:
         cx = dot_start_x + i * dot_gap
         cy = H - 44
         if i + 1 == card_num:
-            draw.ellipse([cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r],
-                         fill="white")
+            draw.ellipse([cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r], fill="white")
         else:
-            draw.ellipse([cx - dot_r + 2, cy - dot_r + 2,
-                          cx + dot_r - 2, cy + dot_r - 2],
-                         fill=(255, 255, 255))
+            draw.ellipse([cx - dot_r + 2, cy - dot_r + 2, cx + dot_r - 2, cy + dot_r - 2],
+                         fill=(200, 200, 255))
 
     buf = BytesIO()
     img.save(buf, format="PNG", optimize=True)
@@ -230,16 +284,12 @@ def make_card_image(card: dict, card_num: int, total: int) -> bytes:
 
 
 # ═════════════════════════════════════════════════════════════
-# STEP 3: Cloudinary 업로드 → 공개 URL 반환
+# STEP 3: Cloudinary 업로드
 # ═════════════════════════════════════════════════════════════
 def upload_to_cloudinary(image_bytes: bytes, public_id: str) -> str:
-    import hashlib
-    import hmac
-    import time as _time
-
     log.info(f"  ☁️  Cloudinary 업로드: {public_id}")
 
-    timestamp = str(int(_time.time()))
+    timestamp = str(int(time.time()))
     params_to_sign = f"public_id={public_id}&timestamp={timestamp}"
     signature = hashlib.sha1(
         (params_to_sign + CLOUDINARY_API_SECRET).encode()
@@ -323,20 +373,18 @@ def post_carousel_to_instagram(image_urls: list, caption: str) -> str:
 # ═════════════════════════════════════════════════════════════
 # 메인 함수 (main.py에서 호출)
 # ═════════════════════════════════════════════════════════════
-def post_instagram(blog_title: str, blog_content_html: str,
-                   tags: list) -> str:
+def post_instagram(blog_title: str, blog_content_html: str, tags: list) -> str:
     log.info("=" * 50)
     log.info("📸 Instagram 카드뉴스 자동화 시작")
     log.info("=" * 50)
 
     # 1. 스크립트 생성
-    script = generate_card_script(blog_title, blog_content_html, tags)
+    script  = generate_card_script(blog_title, blog_content_html, tags)
     cards   = script["cards"]
     caption = script["caption"]
     total   = len(cards)
 
     # 2. 카드 이미지 생성 + Cloudinary 업로드
-    from datetime import datetime
     prefix = datetime.now().strftime("%Y%m%d%H%M")
     image_urls = []
     for card in cards:
