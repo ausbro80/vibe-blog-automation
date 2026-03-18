@@ -254,18 +254,16 @@ def make_card_image(card: dict, card_num: int, total: int) -> bytes:
 def upload_to_cloudinary(image_bytes: bytes, public_id: str) -> str:
     log.info(f"  ☁️  Cloudinary 업로드: {public_id}")
 
-    # ✅ Unsigned 업로드 방식 (인증 없이 공개 URL 생성)
     resp = requests.post(
         f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD_NAME}/image/upload",
         data={
-            "upload_preset": "ml_default",  # Cloudinary 기본 unsigned preset
+            "upload_preset": "ml_default",
             "public_id": public_id,
         },
         files={"file": ("card.png", image_bytes, "image/png")},
         timeout=60,
     )
 
-    # Unsigned preset 실패 시 Signed 방식으로 fallback
     if resp.status_code != 200:
         log.warning("  ⚠️ Unsigned 업로드 실패, Signed 방식으로 재시도...")
         import hashlib
@@ -288,65 +286,86 @@ def upload_to_cloudinary(image_bytes: bytes, public_id: str) -> str:
 
     resp.raise_for_status()
     result = resp.json()
-
-    # ✅ secure_url 대신 일반 url 사용 (Instagram이 접근 가능한 URL)
     url = result.get("url") or result.get("secure_url")
-    # https로 강제 변환
     url = url.replace("http://", "https://")
     log.info(f"    ✅ 업로드 완료: {url[:70]}...")
     return url
 
 
 # ═════════════════════════════════════════════════════════════
-# STEP 4: Instagram 카루셀 포스팅
+# STEP 4: Instagram 카루셀 포스팅 (재시도 로직 포함)
 # ═════════════════════════════════════════════════════════════
 def post_carousel_to_instagram(image_urls: list, caption: str) -> str:
     log.info("📤 Instagram 카루셀 포스팅 중...")
     base = "https://graph.instagram.com/v25.0"
 
+    # 미디어 컨테이너 생성
     children_ids = []
     for i, url in enumerate(image_urls):
         log.info(f"  🖼️  미디어 컨테이너 {i+1}/{len(image_urls)}: {url[:60]}")
+        for attempt in range(3):
+            resp = requests.post(
+                f"{base}/{INSTAGRAM_ACCOUNT_ID}/media",
+                json={
+                    "image_url": url,
+                    "is_carousel_item": True,
+                    "access_token": INSTAGRAM_TOKEN,
+                },
+                timeout=30,
+            )
+            if resp.ok:
+                break
+            log.warning(f"  ⚠️ 컨테이너 생성 실패 (시도 {attempt+1}/3): {resp.text[:100]}")
+            time.sleep(30)
+        resp.raise_for_status()
+        children_ids.append(resp.json()["id"])
+        time.sleep(2)
+
+    # 카루셀 컨테이너 생성
+    log.info("  📦 카루셀 컨테이너 생성 중...")
+    for attempt in range(3):
         resp = requests.post(
             f"{base}/{INSTAGRAM_ACCOUNT_ID}/media",
             json={
-                "image_url": url,
-                "is_carousel_item": True,
+                "media_type": "CAROUSEL",
+                "children": ",".join(children_ids),
+                "caption": caption,
                 "access_token": INSTAGRAM_TOKEN,
             },
             timeout=30,
         )
-        if not resp.ok:
-            log.error(f"  ❌ 미디어 컨테이너 생성 실패: {resp.status_code} {resp.text}")
-            resp.raise_for_status()
-        children_ids.append(resp.json()["id"])
-        time.sleep(2)
-
-    log.info("  📦 카루셀 컨테이너 생성 중...")
-    resp = requests.post(
-        f"{base}/{INSTAGRAM_ACCOUNT_ID}/media",
-        json={
-            "media_type": "CAROUSEL",
-            "children": ",".join(children_ids),
-            "caption": caption,
-            "access_token": INSTAGRAM_TOKEN,
-        },
-        timeout=30,
-    )
+        if resp.ok:
+            break
+        log.warning(f"  ⚠️ 카루셀 생성 실패 (시도 {attempt+1}/3): {resp.text[:100]}")
+        time.sleep(30)
     resp.raise_for_status()
     carousel_id = resp.json()["id"]
 
+    # 게시
     log.info("  🚀 게시 중...")
-    time.sleep(5)
-    resp = requests.post(
-        f"{base}/{INSTAGRAM_ACCOUNT_ID}/media_publish",
-        json={
-            "creation_id": carousel_id,
-            "access_token": INSTAGRAM_TOKEN,
-        },
-        timeout=30,
-    )
+    time.sleep(10)  # ✅ 5초→10초로 늘림 (Instagram 처리 시간 확보)
+    for attempt in range(3):
+        resp = requests.post(
+            f"{base}/{INSTAGRAM_ACCOUNT_ID}/media_publish",
+            json={
+                "creation_id": carousel_id,
+                "access_token": INSTAGRAM_TOKEN,
+            },
+            timeout=30,
+        )
+        if resp.ok:
+            break
+        error_data = resp.json().get("error", {})
+        is_transient = error_data.get("is_transient", False)
+        log.warning(f"  ⚠️ 게시 실패 (시도 {attempt+1}/3, transient={is_transient}): {resp.text[:100]}")
+        if is_transient:
+            wait = 30 * (attempt + 1)
+            log.info(f"  ⏳ {wait}초 대기 후 재시도...")
+            time.sleep(wait)
+        else:
+            resp.raise_for_status()
     resp.raise_for_status()
+
     post_id = resp.json()["id"]
     post_url = f"https://www.instagram.com/p/{post_id}/"
     log.info(f"  ✅ 포스팅 완료: {post_url}")
