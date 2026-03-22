@@ -186,7 +186,6 @@ JSON만 출력 (코드블록 없이):
 """
 
     elif track == "tool":
-        # ✅ 최신 업데이트 중심으로 검색 강화
         trend1 = search(f"{tool_name} new features update {year} latest release")
         trend2 = search(f"{tool_name} 신기능 업데이트 {year} 사용법")
         trend3 = search(f"{tool_name} tips tutorial 초보자 {year}")
@@ -205,7 +204,7 @@ JSON만 출력 (코드블록 없이):
 - 반드시 {year}년 최신 업데이트/기능 기반으로 작성
 - 코딩 0% 초보자도 따라할 수 있는 실용적인 주제
 - 단순 소개 말고 실제로 써먹을 수 있는 내용
-- 예: "Claude 3.7 새 기능으로 블로그 자동화하는 법", "Perplexity Pro 업데이트 후 달라진 5가지"
+- 예: "Claude 최신 기능으로 블로그 자동화하는 법", "Perplexity Pro 업데이트 후 달라진 5가지"
 JSON만 출력 (코드블록 없이):
 {{
   "topic": "오늘의 구체적인 툴 사용법 주제 (한 문장, 최신 업데이트 반영)",
@@ -265,10 +264,12 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
     today = datetime.now().strftime("%Y년 %m월 %d일")
     topic = topic_data["topic"]
 
+    # ✅ SEO 규칙 + 태그 규칙 + 인사이트 원칙 통합
     base_rules = f"""
 블로그명: 바이브코딩 스쿨 (VIBE CODING School)
 오늘 날짜: {today} ({year}년 기준으로만 작성)
 오늘 주제: {topic}
+
 ## 바이브코딩 스쿨 글쓰기 원칙
 - 독자: 코딩 0% 일반인 (직장인, 소상공인, 주부, 학생)
 - 어조: 친근한 선생님 ("~해요", "~거예요", "~네요")
@@ -276,6 +277,25 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 - 수집된 최신 정보 반드시 본문에 녹여낼 것
 - {year}년 현재 기준 (다른 연도 절대 금지)
 - "vibe coding이란?", "AI 코딩이란?" 같은 기초 설명으로 글 시작 금지
+- 수집된 정보를 단순 요약하지 말고, 한국 독자(직장인/취준생/소상공인) 관점의 인사이트와 의견을 반드시 추가할 것
+  예: "이게 한국 취준생한테 어떤 의미인지", "실제로 이 기능을 어떻게 써먹을 수 있는지"
+
+## SEO 제목 규칙 (반드시 준수)
+- 형식: [핵심 키워드] + [구체적 방법/결과] + [대상 또는 연도]
+- 핵심 키워드를 제목 앞부분에 배치 (구글은 앞단어에 가중치 부여)
+- 숫자 포함 권장 (예: "3가지", "5분 만에", "10배")
+- 클릭베이트 절대 금지: "충격!", "경악!", "혁명!", "난리났다", "드디어" 같은 표현 사용 금지
+- 검색 의도 매칭: 실제로 검색할 법한 표현 사용
+- 좋은 예: "Claude Code로 앱 만드는 법 - 초보자 완전 가이드 {year}"
+- 나쁜 예: "충격! AI가 드디어 해냈다! 개발자들 멘붕"
+
+## 태그 규칙 (반드시 준수)
+- 글당 총 3~5개만 선택
+- 아래 필수 태그 중 1~2개 반드시 포함:
+  Claude, 바이브코딩, AI코딩, 앱개발, AI자동화, AI보안, AI에이전트, 초보자가이드
+- 아래 선택 태그는 해당 툴이 글의 핵심 주제일 때만 추가:
+  GitHub, Cursor, Windsurf, Lovable, Perplexity, Gemini, OpenAI
+- 이 목록 외의 태그는 절대 생성 금지
 """
 
     if track == "news":
@@ -283,7 +303,7 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 ## 뉴스 트랙 글 구조
 1. 오늘의 핵심 소식 한 줄 요약으로 시작
 2. 각 소식별 쉬운 설명 + "이게 왜 중요한가" 한 줄 해설
-3. 독자에게 미치는 영향
+3. 독자에게 미치는 영향 (한국 직장인/취준생 관점으로 구체적으로)
 4. 오늘의 픽: 가장 주목할 소식 1개 강조
 5. 마무리 + 내일 예고
 분량: 2000~2500자
@@ -320,14 +340,14 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 ## 출력 (JSON만, 코드블록 없이)
 {{
   "title_candidates": [
-    "클릭률 높은 SEO 제목 1 ({year}년, 구체적)",
-    "클릭률 높은 SEO 제목 2 ({year}년, 구체적)",
-    "클릭률 높은 SEO 제목 3 ({year}년, 구체적)",
-    "클릭률 높은 SEO 제목 4 ({year}년, 구체적)",
-    "클릭률 높은 SEO 제목 5 ({year}년, 구체적)"
+    "[핵심키워드] + [방법/결과] + [대상 or {year}] 형식의 SEO 제목 1 (클릭베이트 금지)",
+    "[핵심키워드] + [방법/결과] + [대상 or {year}] 형식의 SEO 제목 2 (클릭베이트 금지)",
+    "[핵심키워드] + [방법/결과] + [대상 or {year}] 형식의 SEO 제목 3 (클릭베이트 금지)",
+    "[핵심키워드] + [방법/결과] + [대상 or {year}] 형식의 SEO 제목 4 (클릭베이트 금지)",
+    "[핵심키워드] + [방법/결과] + [대상 or {year}] 형식의 SEO 제목 5 (클릭베이트 금지)"
   ],
   "meta_description": "구글 클릭률 높은 메타설명 150자 이내",
-  "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
+  "tags": ["태그1", "태그2", "태그3"],
   "slug": "seo-english-slug-{year}",
   "content_html": "완성된 HTML 본문 (h2 h3 p ul li strong 사용)"
 }}
@@ -338,7 +358,7 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 4: SEO 제목 선택
+# STEP 4: SEO 제목 선택 (이중 필터 — SEO 규칙 기반)
 # ═════════════════════════════════════════════════════════════════════════════
 def select_best_title(post_data: dict) -> str:
     log.info("🔍 SEO 제목 최적화...")
@@ -350,10 +370,17 @@ def select_best_title(post_data: dict) -> str:
         max_tokens=200,
         messages=[{
             "role": "user",
-            "content": (
-                f"다음 제목 후보 중 한국 구글 SEO와 클릭률 관점에서 "
-                f"가장 효과적인 제목 1개만 출력해줘 (번호 없이):\n\n{candidates}"
-            ),
+            "content": f"""다음 제목 후보 중 아래 SEO 규칙에 가장 잘 맞는 제목 1개만 출력해줘 (번호 없이).
+
+## SEO 선택 기준
+- 핵심 키워드가 제목 앞부분에 위치할 것
+- [키워드] + [방법/결과] + [대상 or 연도] 형식에 가까울 것
+- "충격!", "혁명!", "경악!", "드디어", "난리났다" 같은 클릭베이트 표현이 없을 것
+- 숫자가 포함된 제목 우선 선택 (예: "3가지", "5분 만에")
+- 실제로 검색할 법한 자연스러운 표현일 것
+
+후보:
+{candidates}""",
         }],
     )
     title = response.content[0].text.strip()
