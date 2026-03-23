@@ -2,10 +2,10 @@ name: Daily English Blog Post
 
 on:
   schedule:
-    # 한국시간 오전 11시 = UTC 02:00 (미국 동부 오전 10시 전후)
+    # 한국시간 오전 11시 = UTC 02:00
     - cron: '0 2 * * *'
-    # 한국시간 오후 9시 = UTC 12:00 (미국 동부 오전 8시 — 출근 전 골든타임)
-    - cron: '0 12 * * *'
+    # 한국시간 오후 8시 = UTC 11:00
+    - cron: '0 11 * * *'
   workflow_dispatch:
 
 jobs:
