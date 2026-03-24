@@ -4,6 +4,10 @@
 블로그 글 → 카드뉴스 5장 → Instagram 카루셀 포스팅
 디자인: 비비드 그라데이션 (보라 → 핑크)
 이미지 호스팅: Cloudinary (무료, Unsigned 업로드)
+
+v1.1 수정사항:
+  - post_instagram() 반환값에 card_image_urls 추가
+  - 유튜브 쇼츠에서 인스타 카드 이미지 재활용 가능
 """
 
 import os
@@ -249,7 +253,7 @@ def make_card_image(card: dict, card_num: int, total: int) -> bytes:
 
 
 # ═════════════════════════════════════════════════════════════
-# STEP 3: Cloudinary 업로드 (Unsigned → 완전 공개 URL)
+# STEP 3: Cloudinary 업로드
 # ═════════════════════════════════════════════════════════════
 def upload_to_cloudinary(image_bytes: bytes, public_id: str) -> str:
     log.info(f"  ☁️  Cloudinary 업로드: {public_id}")
@@ -293,13 +297,12 @@ def upload_to_cloudinary(image_bytes: bytes, public_id: str) -> str:
 
 
 # ═════════════════════════════════════════════════════════════
-# STEP 4: Instagram 카루셀 포스팅 (재시도 로직 포함)
+# STEP 4: Instagram 카루셀 포스팅
 # ═════════════════════════════════════════════════════════════
 def post_carousel_to_instagram(image_urls: list, caption: str) -> str:
     log.info("📤 Instagram 카루셀 포스팅 중...")
     base = "https://graph.instagram.com/v25.0"
 
-    # 미디어 컨테이너 생성
     children_ids = []
     for i, url in enumerate(image_urls):
         log.info(f"  🖼️  미디어 컨테이너 {i+1}/{len(image_urls)}: {url[:60]}")
@@ -321,7 +324,6 @@ def post_carousel_to_instagram(image_urls: list, caption: str) -> str:
         children_ids.append(resp.json()["id"])
         time.sleep(2)
 
-    # 카루셀 컨테이너 생성
     log.info("  📦 카루셀 컨테이너 생성 중...")
     for attempt in range(3):
         resp = requests.post(
@@ -341,9 +343,8 @@ def post_carousel_to_instagram(image_urls: list, caption: str) -> str:
     resp.raise_for_status()
     carousel_id = resp.json()["id"]
 
-    # 게시
     log.info("  🚀 게시 중...")
-    time.sleep(10)  # ✅ 5초→10초로 늘림 (Instagram 처리 시간 확보)
+    time.sleep(10)
     for attempt in range(3):
         resp = requests.post(
             f"{base}/{INSTAGRAM_ACCOUNT_ID}/media_publish",
@@ -374,8 +375,10 @@ def post_carousel_to_instagram(image_urls: list, caption: str) -> str:
 
 # ═════════════════════════════════════════════════════════════
 # 메인 함수 (main.py에서 호출)
+# ✅ 반환값: (post_url, card_image_urls)
+#    card_image_urls → 유튜브 쇼츠에서 재활용
 # ═════════════════════════════════════════════════════════════
-def post_instagram(blog_title: str, blog_content_html: str, tags: list) -> str:
+def post_instagram(blog_title: str, blog_content_html: str, tags: list) -> tuple:
     log.info("=" * 50)
     log.info("📸 Instagram 카드뉴스 자동화 시작")
     log.info("=" * 50)
@@ -400,4 +403,6 @@ def post_instagram(blog_title: str, blog_content_html: str, tags: list) -> str:
     log.info("=" * 50)
     log.info(f"🎉 Instagram 포스팅 완료: {post_url}")
     log.info("=" * 50)
-    return post_url
+
+    # ✅ post_url + card_image_urls 같이 반환
+    return post_url, image_urls
