@@ -237,7 +237,9 @@ def make_card_frame(card_image_bytes: bytes, subtitle: str) -> bytes:
 
     # 카드 이미지 (1080x1080) 중앙 상단 배치
     try:
-        card = Image.open(BytesIO(card_image_bytes)).convert("RGB")
+        bio = BytesIO(card_image_bytes)
+        bio.seek(0)
+        card = Image.open(bio).convert("RGB")
         card = card.resize((CARD_SIZE, CARD_SIZE), Image.LANCZOS)
         card_y = (H - CARD_SIZE) // 2 - 80  # 살짝 위로
         frame.paste(card, (0, card_y))
@@ -248,7 +250,7 @@ def make_card_frame(card_image_bytes: bytes, subtitle: str) -> bytes:
     subtitle_bg_y = H - 280
     subtitle_bg = Image.new("RGBA", (W, 280), (0, 0, 0, 180))
     frame.paste(Image.fromarray(
-        __import__('numpy').array(subtitle_bg)[:, :, :3]
+        .array(subtitle_bg)[:, :, :3]
     ), (0, subtitle_bg_y))
 
     # 자막 텍스트
