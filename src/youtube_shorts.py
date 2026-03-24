@@ -159,9 +159,25 @@ def create_shorts_video(image_url: str, audio_bytes: bytes, title: str) -> str:
         img_resp = requests.get(image_url, timeout=30)
         img_path.write_bytes(img_resp.content)
 
-        # 음성 저장
+        # 음성 저장 (Gemini TTS는 LINEAR16 PCM 포맷으로 반환)
+        audio_raw_path = tmpdir / "voice.raw"
+        audio_raw_path.write_bytes(audio_bytes)
+
+        # raw PCM → WAV 변환
         audio_path = tmpdir / "voice.wav"
-        audio_path.write_bytes(audio_bytes)
+        wav_cmd = [
+            "ffmpeg", "-y",
+            "-f", "s16le",       # 16bit signed little-endian PCM
+            "-ar", "22050",      # 샘플레이트 22050Hz (Gemini TTS 기본값)
+            "-ac", "1",          # 모노
+            "-i", str(audio_raw_path),
+            str(audio_path)
+        ]
+        wav_result = subprocess.run(wav_cmd, capture_output=True, text=True)
+        if wav_result.returncode != 0:
+            # raw 변환 실패시 원본 그대로 사용
+            audio_path = audio_raw_path
+            log.warning(f"  ⚠️ WAV 변환 실패, 원본 사용: {wav_result.stderr[:200]}")
 
         # 출력 영상 경로
         output_path = tmpdir / "shorts.mp4"
