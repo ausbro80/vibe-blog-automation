@@ -1,0 +1,33 @@
+name: YouTube Shorts 테스트 v2
+on:
+  workflow_dispatch:
+
+jobs:
+  test-youtube:
+    name: 유튜브 쇼츠 테스트
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: 패키지 설치
+        run: pip install -r requirements.txt
+
+      - name: ffmpeg + 폰트 설치
+        run: |
+          sudo apt-get update --fix-missing || true
+          sudo apt-get install -y --fix-missing ffmpeg fonts-noto-cjk || true
+
+      - name: 유튜브 쇼츠 테스트 실행
+        env:
+          ANTHROPIC_API_KEY:       ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY:          ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        run: python test_youtube_run.py
