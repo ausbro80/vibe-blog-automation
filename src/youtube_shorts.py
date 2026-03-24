@@ -3,7 +3,7 @@
 ─────────────────────────────────────────
 블로그 글 발행 후 자동으로:
   1. 쇼츠 스크립트 생성 (Claude)
-  2. 음성 생성 (Gemini TTS - Orus 남성)
+  2. 음성 생성 (Gemini TTS - Puck 남성)
   3. 썸네일 이미지 + 음성 합쳐서 영상 제작 (ffmpeg)
   4. 유튜브 자동 업로드 (YouTube Data API)
 """
@@ -106,7 +106,7 @@ JSON만 출력 (코드블록 없이):
 # STEP 2: Gemini TTS로 음성 생성 (Orus 남성)
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_voice(script: str) -> bytes:
-    log.info("🎙️  음성 생성 중... (Gemini TTS - Orus)")
+    log.info("🎙️  음성 생성 중... (Gemini TTS - Puck)")
 
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -121,7 +121,7 @@ def generate_voice(script: str) -> bytes:
             "speechConfig": {
                 "voiceConfig": {
                     "prebuiltVoiceConfig": {
-                        "voiceName": "Orus"
+                        "voiceName": "Puck"
                     }
                 }
             }
@@ -168,7 +168,7 @@ def create_shorts_video(image_url: str, audio_bytes: bytes, title: str) -> str:
         wav_cmd = [
             "ffmpeg", "-y",
             "-f", "s16le",       # 16bit signed little-endian PCM
-            "-ar", "22050",      # 샘플레이트 22050Hz (Gemini TTS 기본값)
+            "-ar", "24000",      # 샘플레이트 22050Hz (Gemini TTS 기본값)
             "-ac", "1",          # 모노
             "-i", str(audio_raw_path),
             str(audio_path)
@@ -192,7 +192,7 @@ def create_shorts_video(image_url: str, audio_bytes: bytes, title: str) -> str:
             "-tune", "stillimage",
             "-c:a", "aac",
             "-b:a", "192k",
-            "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black",
+            "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
             "-shortest",
             "-movflags", "+faststart",
             "-pix_fmt", "yuv420p",
