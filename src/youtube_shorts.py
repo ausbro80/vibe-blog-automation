@@ -307,19 +307,27 @@ def upload_to_youtube(video_path: str, shorts_meta: dict) -> str:
 # ═════════════════════════════════════════════════════════════════════════════
 # 메인 함수 — main.py에서 호출
 # ═════════════════════════════════════════════════════════════════════════════
-def post_youtube_shorts(title: str, content_html: str, blog_url: str) -> str:
+def post_youtube_shorts(title: str, content_html: str, blog_url: str, card_image_urls: list = None) -> str:
     """
     블로그 포스팅 완료 후 호출.
-    title        : 블로그 제목
-    content_html : 블로그 본문 HTML
-    blog_url     : 블로그 포스트 URL
+    title           : 블로그 제목
+    content_html    : 블로그 본문 HTML
+    blog_url        : 블로그 포스트 URL
+    card_image_urls : 인스타 카드 이미지 URL 리스트 (없으면 자체 생성)
     """
     try:
         # 1. 스크립트 + 메타데이터 생성
         shorts_meta = generate_shorts_script(title, content_html, blog_url)
 
-        # 2. 쇼츠용 9:16 이미지 생성
-        image_bytes = generate_shorts_image(title)
+        # 2. 이미지 준비 (인스타 카드 있으면 재활용, 없으면 자체 생성)
+        if card_image_urls:
+            log.info("🖼️  인스타 카드 이미지 재활용 중...")
+            img_resp = requests.get(card_image_urls[0], timeout=30)
+            image_bytes = img_resp.content
+            log.info(f"  ✅ 카드 이미지 로드 완료 ({len(image_bytes)} bytes)")
+        else:
+            log.info("🖼️  인스타 카드 없음 → 자체 이미지 생성")
+            image_bytes = generate_shorts_image(title)
 
         # 3. 음성 생성 (Charon)
         audio_bytes = generate_voice(shorts_meta["script"])
