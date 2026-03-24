@@ -460,7 +460,7 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 
 완성된 HTML 본문만 출력해줘. JSON 형식 금지, 마크다운 코드블록 금지, HTML 태그만 바로 출력.
 """
-    content_html = call_claude_raw(html_prompt, max_tokens=4000)
+    content_html = call_claude_raw(html_prompt, max_tokens=8000)
 
     if content_html.startswith("```"):
         lines = content_html.split("\n")
