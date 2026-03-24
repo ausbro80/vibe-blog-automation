@@ -340,8 +340,25 @@ def generate_post(track: str, topic_data: dict, deep_research: str) -> dict:
   "meta_description": "구글 클릭률 높은 메타설명 150자 이내",
   "tags": ["태그1", "태그2", "태그3"],
   "slug": "seo-korean-slug-{year}",
-  "content_html": "완성된 HTML 본문 (h2 h3 p ul li strong 사용)"
+  "content_html": "완성된 HTML 본문 — 아래 스타일 가이드 반드시 적용"
 }}
+
+## HTML 스타일 가이드 (content_html에 반드시 적용)
+포인트 컬러: #059669 (에메랄드/초록) — AI 재테크 스쿨 브랜드 색상
+
+1. 핵심 요약 박스 (글 상단에 반드시 1개 사용):
+<div style="background:#ECFDF5;border-left:4px solid #059669;border-radius:0 8px 8px 0;padding:16px 20px;margin:24px 0"><p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#065F46">💰 핵심 포인트</p><p style="margin:0;font-size:14px;color:#064E3B;line-height:1.7">핵심 내용</p></div>
+
+2. 번호 카드 (단계별/방법별 설명에 사용, 3~5개):
+<div style="background:#fff;border:1px solid #A7F3D0;border-radius:12px;padding:16px;display:flex;gap:16px;align-items:flex-start;margin-bottom:12px"><div style="background:#059669;color:#fff;font-size:14px;font-weight:700;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0">1</div><div><p style="margin:0 0 6px;font-size:15px;font-weight:700;color:#064E3B">제목</p><p style="margin:0;font-size:14px;color:#4B5563;line-height:1.6">내용</p></div></div>
+
+3. 수익/팁 강조 박스:
+<div style="background:#ECFDF5;border-radius:12px;padding:16px 20px;margin:20px 0"><p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#059669">💡 꿀팁</p><p style="margin:0;font-size:14px;color:#065F46;line-height:1.6">내용. 수익/금액은 <mark style="background:#6EE7B7;color:#065F46;padding:2px 6px;border-radius:4px">이렇게 강조</mark></p></div>
+
+4. h2 섹션 제목:
+<h2 style="font-size:18px;font-weight:700;color:#064E3B;margin:32px 0 16px;padding-bottom:8px;border-bottom:2px solid #059669">섹션 제목</h2>
+
+규칙: 모든 섹션에 위 스타일 중 하나 이상 반드시 사용. 일반 텍스트 나열 금지. 수익/금액 수치는 반드시 mark 태그로 강조.
 """
     post_data = call_claude(prompt)
     log.info("  ✅ 블로그 글 생성 완료")
