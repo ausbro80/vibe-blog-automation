@@ -7,6 +7,10 @@ Track configuration:
 
 Tool rotation: Claude → Perplexity → Cursor → Windsurf →
               Lovable → Gemini → ChatGPT → GitHub Copilot → repeat
+
+v1.1 Fix:
+  - generate_post split into 2 steps: meta (JSON) + body (raw HTML)
+  - Prevents JSON parse crash caused by quotes inside HTML attributes
 """
 
 import os
@@ -82,6 +86,10 @@ def search(query: str, max_tokens: int = 2000) -> str:
 
 
 def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
+    """
+    Claude API call + JSON parsing (with retry).
+    Use only for metadata — never include HTML in the prompt output.
+    """
     for attempt in range(3):
         try:
             time.sleep(15)
@@ -98,6 +106,27 @@ def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
                         raw = part
                         break
             return json.loads(raw.strip())
+        except Exception as e:
+            wait = 30 * (attempt + 1)
+            log.warning(f"  ⚠️ Claude call failed (attempt {attempt+1}/3): {e}")
+            time.sleep(wait)
+    raise RuntimeError("Claude API failed after 3 attempts")
+
+
+def call_claude_raw(prompt: str, max_tokens: int = 4000) -> str:
+    """
+    Claude API call — returns raw text, no JSON parsing.
+    Use for HTML body content to avoid quote-collision parse errors.
+    """
+    for attempt in range(3):
+        try:
+            time.sleep(15)
+            response = claude.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.content[0].text.strip()
         except Exception as e:
             wait = 30 * (attempt + 1)
             log.warning(f"  ⚠️ Claude call failed (attempt {attempt+1}/3): {e}")
@@ -190,7 +219,6 @@ Latest info:
 Decide the best tool review/tutorial topic for '{tool_name}'.
 - Based on {year} latest updates
 - Practical, actionable content for non-technical users
-- Example: "Claude's New Feature That Replaces 3 Productivity Apps", "5 Perplexity Tips Power Users Don't Share"
 
 Output JSON only (no code blocks):
 {{
@@ -244,7 +272,13 @@ def collect_deep_research(topic_data: dict) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 3: Generate blog post
+# STEP 3: Generate blog post (meta + HTML body separated)
+#
+# ✅ Key fix:
+#   Before: call_claude() returned JSON with content_html inside
+#           → HTML attribute quotes broke JSON parsing
+#   After:  Step 1 — call_claude() returns metadata JSON only (no HTML)
+#           Step 2 — call_claude_raw() returns HTML body as plain text
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_post(track: str, topic_data: dict, deep_research: str) -> dict:
     log.info("✍️  Writing blog post...")
@@ -265,7 +299,6 @@ Today's topic: {topic}
 - {year} context only (never reference outdated information)
 - Never start with basic "AI is changing the world" intros — get straight to the point
 - Don't just summarize sources — add unique insights and practical advice readers can act on immediately
-  Example: "Here's what this means for your workflow", "Here's exactly how to set this up in 5 minutes"
 
 ## SEO Title Rules (strictly follow)
 - Format: [Primary Keyword] + [Specific Result/Method] + [Audience or Year]
@@ -321,15 +354,17 @@ Length: 1,000~1,500 words
 Length: 1,000~1,500 words
 """
 
-    prompt = f"""
+    # ─────────────────────────────────────────────
+    # Step 1: Metadata only — JSON with no HTML
+    # ─────────────────────────────────────────────
+    log.info("  📋 Step 1: Generating metadata...")
+    meta_prompt = f"""
 {base_rules}
 
 ## Research & Latest Information
 {deep_research if deep_research else f"{topic} latest information {year}"}
 
-{structure}
-
-## Output (JSON only, no code blocks)
+Output the following JSON only (no code blocks, absolutely no HTML):
 {{
   "title_candidates": [
     "[Keyword] + [Result/Method] + [Audience or {year}] — SEO title 1 (no clickbait)",
@@ -340,11 +375,25 @@ Length: 1,000~1,500 words
   ],
   "meta_description": "Google-optimized meta description under 155 characters",
   "tags": ["tag1", "tag2", "tag3"],
-  "slug": "seo-english-slug-{year}",
-  "content_html": "Complete HTML post body — apply style guide below"
+  "slug": "seo-english-slug-{year}"
 }}
+"""
+    meta_data = call_claude(meta_prompt, max_tokens=800)
+    log.info("  ✅ Metadata generated")
 
-## HTML Style Guide (must apply to content_html)
+    # ─────────────────────────────────────────────
+    # Step 2: HTML body as plain text — no JSON parsing
+    # Completely avoids quote-collision errors
+    # ─────────────────────────────────────────────
+    log.info("  ✍️  Step 2: Generating HTML body...")
+    html_prompt = f"""
+{base_rules}
+{structure}
+
+## Research & Latest Information
+{deep_research if deep_research else f"{topic} latest information {year}"}
+
+## HTML Style Guide (must apply)
 Brand color: #0D9488 (Teal) — AI Tools & Productivity Guide theme
 
 1. Key summary box (required, place at top):
@@ -359,15 +408,27 @@ Brand color: #0D9488 (Teal) — AI Tools & Productivity Guide theme
 4. Section h2 style:
 <h2 style="font-size:18px;font-weight:700;color:#134E4A;margin:32px 0 16px;padding-bottom:8px;border-bottom:2px solid #0D9488">Section Title</h2>
 
-Rules: Every section must use at least one style above. No plain text blocks. Highlight key terms with mark tags.
+Rules:
+- Every section must use at least one style above
+- No plain text blocks
+- Highlight key terms with mark tags
+
+Output the complete HTML body only. No JSON format, no markdown code blocks — just raw HTML tags.
 """
-    post_data = call_claude(prompt)
-    log.info("  ✅ Blog post generated")
-    return post_data
+    content_html = call_claude_raw(html_prompt, max_tokens=4000)
+
+    # Strip code block wrapper if present
+    if content_html.startswith("```"):
+        lines = content_html.split("\n")
+        content_html = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+
+    meta_data["content_html"] = content_html
+    log.info(f"  ✅ Blog post generated (body: {len(content_html)} chars)")
+    return meta_data
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 4: Select best SEO title (double filter)
+# STEP 4: Select best SEO title
 # ═════════════════════════════════════════════════════════════════════════════
 def select_best_title(post_data: dict) -> str:
     log.info("🔍 Optimizing SEO title...")
