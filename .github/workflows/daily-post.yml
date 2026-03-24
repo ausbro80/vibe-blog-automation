@@ -31,8 +31,10 @@ jobs:
           cache: "pip"
       - name: 📦 패키지 설치
         run: pip install -r requirements.txt
-      - name: 🔤 한글 폰트 + ffmpeg 설치
-        run: sudo apt-get install -y fonts-noto-cjk ffmpeg
+     - name: 🔤 한글 폰트 + ffmpeg 설치
+  run: |
+    sudo apt-get update --fix-missing || true
+    sudo apt-get install -y --fix-missing fonts-noto-cjk ffmpeg || true
       - name: 🚀 블로그 자동화 실행
         env:
           ANTHROPIC_API_KEY:        ${{ secrets.ANTHROPIC_API_KEY }}
