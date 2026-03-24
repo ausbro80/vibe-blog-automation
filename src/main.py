@@ -84,7 +84,7 @@ def search(query: str, max_tokens: int = 2000) -> str:
     return ""
 
 
-def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
+def call_claude(prompt: str, max_tokens: int = 6000) -> dict:
     """메타데이터 전용 — JSON 파싱 (HTML 포함 금지)"""
     for attempt in range(3):
         try:
@@ -110,7 +110,7 @@ def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
     raise RuntimeError("Claude API 호출 3회 모두 실패")
 
 
-def call_claude_raw(prompt: str, max_tokens: int = 4000) -> str:
+def call_claude_raw(prompt: str, max_tokens: int = 6000) -> str:
     """HTML 본문 전용 — JSON 파싱 없이 텍스트 그대로 반환"""
     for attempt in range(3):
         try:
@@ -460,7 +460,7 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 
 완성된 HTML 본문만 출력해줘. JSON 형식 금지, 마크다운 코드블록 금지, HTML 태그만 바로 출력.
 """
-    content_html = call_claude_raw(html_prompt, max_tokens=4000)
+    content_html = call_claude_raw(html_prompt, max_tokens=6000)
 
     if content_html.startswith("```"):
         lines = content_html.split("\n")
