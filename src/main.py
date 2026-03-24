@@ -5,13 +5,11 @@
   아침 9시 → 📰 뉴스 트랙: 오늘의 AI 코딩 최신 소식
   저녁 9시 → 📚 교육 트랙 / 🛠️ 툴 사용법 트랙 (하루씩 번갈아)
 
-툴 순환: Claude → Perplexity → Google AI Studio → Gemini →
-         Codex → Cursor → Windsurf → Lovable → 반복
-
-v4.1 수정사항:
-  - generate_post를 메타(JSON) + 본문(HTML 순수텍스트) 2단계로 분리
-  - HTML이 JSON 안에 들어가 따옴표 충돌로 파싱 실패하던 버그 수정
-  - 마크다운 잔여물 후처리 추가 (**굵게** → <strong> 등)
+v4.2 수정사항:
+  - 툴 트랙 고정 순환 완전 제거 → AI가 오늘 가장 핫한 툴 자동 선택
+  - 뉴스 트랙: 정책/요금 변경, 보안 이슈, 업계 동향 추가
+  - 교육 트랙: 실전 자동화, 도구 비교, 수익화 주제 추가
+  - 툴 트랙: 실전편 (코딩 없이 따라하기) 추가
 """
 
 import os
@@ -40,17 +38,6 @@ BLOGGER_BLOG_ID    = os.environ["BLOGGER_BLOG_ID"]
 GOOGLE_CREDENTIALS = os.environ["GOOGLE_CREDENTIALS_JSON"]
 
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-TOOL_LIST = [
-    "Claude (Anthropic)",
-    "Perplexity AI",
-    "Google AI Studio",
-    "Gemini",
-    "OpenAI Codex",
-    "Cursor",
-    "Windsurf",
-    "Lovable",
-]
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -142,12 +129,16 @@ def call_claude_raw(prompt: str, max_tokens: int = 4000) -> str:
 
 
 def get_track() -> tuple:
+    """
+    아침(hour < 12) → news
+    저녁 홀수일     → edu
+    저녁 짝수일     → tool (tool_name=None → AI가 오늘 가장 핫한 툴 자동 선택)
+    """
     now = datetime.now()
     if now.hour < 12:
         return "news", None
     if now.timetuple().tm_yday % 2 == 0:
-        tool = TOOL_LIST[(now.timetuple().tm_yday // 2) % len(TOOL_LIST)]
-        return "tool", tool
+        return "tool", None  # ✅ 고정 순환 제거 — AI가 직접 선택
     return "edu", None
 
 
@@ -187,18 +178,33 @@ def decide_topic(track: str, tool_name: str = None) -> dict:
     year  = datetime.now().year
     today = datetime.now().strftime("%Y년 %m월 %d일")
 
+    # ─────────────────────────────────────────────
+    # 뉴스 트랙: 정책/요금/보안/업계 동향까지 확장
+    # ─────────────────────────────────────────────
     if track == "news":
-        trend1 = search(f"Claude Anthropic AI coding update {year} latest")
-        trend2 = search(f"Cursor Windsurf Lovable vibe coding news {year} latest")
-        trend3 = search(f"OpenAI Codex Google Gemini Perplexity AI coding {year} latest")
-        context = f"[Anthropic/Claude]\n{trend1}\n\n[Cursor/Windsurf/Lovable]\n{trend2}\n\n[기타 AI 도구]\n{trend3}"
+        trend1 = search(f"Claude Anthropic AI coding update policy pricing {year} latest")
+        trend2 = search(f"Cursor Windsurf Lovable Bolt vibe coding news {year} latest")
+        trend3 = search(f"OpenAI Gemini Perplexity AI coding policy pricing change {year} latest")
+        context = f"[Anthropic/Claude]\n{trend1}\n\n[Cursor/Windsurf/Lovable/Bolt]\n{trend2}\n\n[OpenAI/Gemini/Perplexity 정책/요금]\n{trend3}"
         prompt = f"""
 오늘({today}) AI 코딩 업계 최신 트렌드 정보입니다:
 {context}
+
 위 정보를 바탕으로 오늘 '바이브코딩 스쿨' 블로그의 뉴스 포스트 주제를 결정해줘.
+
+아래 주제 유형 중 오늘 가장 화제인 것을 선택해줘:
+- AI 코딩 도구 신기능/업데이트 소식
+- Claude/Gemini/OpenAI/Perplexity 정책 또는 요금 변경
+- AI 코딩 도구 간 비교/순위 변화
+- 바이브코딩 관련 업계 동향 (기업 도입, 시장 변화)
+- AI 보안/개인정보 이슈
+- 한국 개발자/직장인에게 직접 영향을 주는 변화
+
+조건:
 - 오늘 가장 화제가 되는 내용 중심
 - 한국 일반인 독자가 관심 가질 주제
-- 이미 많이 다뤄진 "vibe coding이란?" 같은 기초 주제 절대 금지
+- "vibe coding이란?" 같은 기초 주제 절대 금지
+
 JSON만 출력 (코드블록 없이):
 {{
   "topic": "오늘의 구체적인 뉴스 주제 (한 문장)",
@@ -207,46 +213,75 @@ JSON만 출력 (코드블록 없이):
 }}
 """
 
+    # ─────────────────────────────────────────────
+    # 툴 트랙: AI가 오늘 가장 핫한 툴 자동 선택
+    # ─────────────────────────────────────────────
     elif track == "tool":
-        trend1 = search(f"{tool_name} new features update {year} latest release")
-        trend2 = search(f"{tool_name} 신기능 업데이트 {year} 사용법")
-        trend3 = search(f"{tool_name} tips tutorial 초보자 {year}")
+        trend1 = search(f"AI coding tool trending hot update {year} latest")
+        trend2 = search(f"바이브코딩 AI 도구 인기 신기능 {year} 최신")
         prompt = f"""
-오늘({today}) 다룰 AI 도구: {tool_name}
-
-최신 업데이트 및 기능 정보:
-[신규 기능/업데이트]
+오늘({today}) AI 코딩 도구 트렌드입니다:
+[글로벌 트렌드]
 {trend1}
-[한국어 사용법 트렌드]
+[한국 트렌드]
 {trend2}
-[튜토리얼/팁]
-{trend3}
 
-위 최신 정보를 바탕으로 '{tool_name}' 사용법 블로그 포스트 주제를 결정해줘.
-- 반드시 {year}년 최신 업데이트/기능 기반으로 작성
+위 정보를 바탕으로 오늘 다룰 AI 코딩 도구를 직접 선택하고, 포스트 주제를 결정해줘.
+
+선택 가능한 도구 예시 (이 외에도 오늘 핫한 도구면 선택 가능):
+Claude, ChatGPT, Gemini, Perplexity, Cursor, Windsurf, Lovable, Bolt.new,
+Replit, GitHub Copilot, Google AI Studio, Devin, v0, Codeium, Tabnine,
+NotebookLM, Midjourney, Canva AI, Notion AI 등
+
+주제 유형 (아래 중 오늘 가장 적합한 것 선택):
+- 최신 업데이트/신기능 실전 사용법
+- 코딩 없이 따라하는 실전편 (단계별 가이드)
+- 초보자가 바로 써먹는 꿀팁 모음
+- 다른 도구와 비교해서 언제 쓰면 좋은지
+- 특정 업무(블로그, 쇼핑몰, 자동화 등)에 활용하는 법
+
+조건:
+- {year}년 최신 업데이트 기반
 - 코딩 0% 초보자도 따라할 수 있는 실용적인 주제
-- 단순 소개 말고 실제로 써먹을 수 있는 내용
+- 실제로 써먹을 수 있는 내용 (단순 소개 금지)
+
 JSON만 출력 (코드블록 없이):
 {{
-  "topic": "오늘의 구체적인 툴 사용법 주제 (한 문장, 최신 업데이트 반영)",
-  "tool": "{tool_name}",
-  "reason": "이 주제를 선택한 이유",
+  "topic": "오늘의 구체적인 툴 주제 (한 문장)",
+  "tool": "선택한 AI 도구 이름",
+  "reason": "이 도구와 주제를 선택한 이유",
   "search_queries": ["추가로 검색할 쿼리1", "추가로 검색할 쿼리2"]
 }}
 """
 
+    # ─────────────────────────────────────────────
+    # 교육 트랙: 실전 자동화, 비교, 수익화 추가
+    # ─────────────────────────────────────────────
     else:  # edu
-        trend1 = search(f"vibe coding tutorial beginner question {year}")
-        trend2 = search(f"AI coding tool comparison review {year} Korea")
+        trend1 = search(f"vibe coding 실전 자동화 튜토리얼 {year} Korea")
+        trend2 = search(f"AI coding tool comparison workflow automation {year}")
         prompt = f"""
-오늘({today}) AI 코딩 관련 검색 트렌드 및 화제 정보입니다:
-[튜토리얼/질문 트렌드]
+오늘({today}) AI 코딩/자동화 관련 트렌드입니다:
+[실전/튜토리얼 트렌드]
 {trend1}
-[도구 비교/리뷰 트렌드]
+[도구 비교/워크플로우 트렌드]
 {trend2}
+
 위 정보를 바탕으로 오늘 '바이브코딩 스쿨' 블로그의 교육 포스트 주제를 결정해줘.
-- 코딩 0% 초보자가 실제로 궁금해하는 내용
+
+아래 주제 유형 중 오늘 가장 적합한 것 선택:
+- 실전 자동화 가이드 (블로그 자동화, SNS 자동화, 업무 자동화 등 코딩 없이 따라하기)
+- AI 도구 비교 (어떤 상황에 어떤 도구가 맞는지)
+- AI로 수익 내는 실전 방법 (부업, 프리랜서, 콘텐츠 제작)
+- 직장인/소상공인이 바로 쓰는 AI 활용법
+- 초보자가 자주 막히는 문제 + 해결법
+- AI 에이전트 활용 실전 가이드
+
+조건:
+- 코딩 0% 초보자가 실제로 따라할 수 있는 내용
 - "vibe coding이란?", "AI 코딩이란?" 같은 기초 입문 주제 절대 금지
+- 읽고 나서 바로 실행할 수 있는 구체적인 주제
+
 JSON만 출력 (코드블록 없이):
 {{
   "topic": "오늘의 구체적인 교육 주제 (한 문장)",
@@ -329,10 +364,22 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
     elif track == "tool":
         tool = topic_data.get("tool", "AI 도구")
         structure = f"""
-## 툴 사용법 트랙 글 구조 ({tool} 최신 버전 기준)
-1. "이런 분들께 딱!" 공감 도입 (이 도구가 필요한 상황)
-2. {tool} 최신 업데이트 핵심 변경사항 요약
-3. 핵심 기능 3가지 실전 사용법 (구체적인 예시 + 단계별 설명)
+## 툴 트랙 글 구조 ({tool} 기준)
+아래 유형 중 오늘 주제에 맞는 구조 선택:
+
+[실전편 - 코딩 없이 따라하기]
+1. "이런 분들께 딱!" 공감 도입
+2. 준비물 (계정, 설치 등 최소화)
+3. 단계별 실전 가이드 (스크린샷 설명하듯 구체적으로, 5~7단계)
+4. 실제 결과물 예시
+5. 자주 막히는 포인트 + 해결법
+6. 마무리 + 다음 편 예고
+분량: 2500~3000자
+
+[사용법/기능 소개]
+1. "이런 분들께 딱!" 공감 도입
+2. {tool} 최신 업데이트 핵심 변경사항
+3. 핵심 기능 3가지 실전 사용법
 4. 초보자가 자주 하는 실수 + 해결법
 5. {year}년 기준 꿀팁 3가지
 6. 마무리 + 다음 툴 예고
@@ -341,11 +388,23 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
     else:
         structure = """
 ## 교육 트랙 글 구조
+아래 유형 중 오늘 주제에 맞는 구조 선택:
+
+[실전 자동화 가이드]
+1. 공감 도입 (이걸 자동화하면 이런 게 해결돼요)
+2. 필요한 도구 소개 (무료/유료 구분)
+3. 단계별 자동화 세팅 방법 (최대한 구체적으로)
+4. 실제 활용 예시 (직장인/소상공인 케이스)
+5. 주의사항 + 흔한 실수
+6. 마무리 + 다음 글 예고
+분량: 2500~3000자
+
+[도구 비교 / 수익화 / 활용법]
 1. 공감 도입
-2. 핵심 개념 쉽게 설명
-3. 최신 트렌드 활용
-4. 단계별 실전 방법
-5. 꿀팁 또는 주의사항
+2. 핵심 내용 설명 (쉽게)
+3. 실전 적용 방법 (단계별)
+4. 현실적인 기대치 / 주의사항
+5. 바로 시작하는 첫 단계
 6. 마무리 + 다음 글 예고
 분량: 2500~3000자
 """
@@ -570,13 +629,13 @@ def post_to_blogger(title: str, post_data: dict, image_b64: str) -> str:
 # ═════════════════════════════════════════════════════════════════════════════
 def main():
     log.info("=" * 60)
-    log.info("🚀 바이브코딩 스쿨 자동화 시작 (v4 — AI 주제 자동 결정)")
+    log.info("🚀 바이브코딩 스쿨 자동화 시작 (v4.2 — AI 주제/툴 자동 결정)")
     log.info(f"   날짜: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     log.info("=" * 60)
 
     try:
         track, tool_name = get_track()
-        log.info(f"  📌 트랙: {track.upper()}" + (f" | 툴: {tool_name}" if tool_name else ""))
+        log.info(f"  📌 트랙: {track.upper()}")
 
         topic_data = decide_topic(track, tool_name)
         deep_news  = collect_deep_news(topic_data)
