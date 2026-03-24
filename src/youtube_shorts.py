@@ -248,10 +248,10 @@ def make_card_frame(card_image_bytes: bytes, subtitle: str) -> bytes:
 
     # 하단 자막 영역 (반투명 검정 배경)
     subtitle_bg_y = H - 280
-    subtitle_bg = Image.new("RGBA", (W, 280), (0, 0, 0, 180))
-    frame.paste(Image.fromarray(
-        .array(subtitle_bg)[:, :, :3]
-    ), (0, subtitle_bg_y))
+    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    overlay_draw = ImageDraw.Draw(overlay)
+    overlay_draw.rectangle([0, subtitle_bg_y, W, H], fill=(0, 0, 0, 180))
+    frame = Image.alpha_composite(frame.convert("RGBA"), overlay).convert("RGB")
 
     # 자막 텍스트
     draw = ImageDraw.Draw(frame)
