@@ -10,6 +10,7 @@ v4.2 수정사항:
   - 뉴스 트랙: 정책/요금 변경, 보안 이슈, 업계 동향 추가
   - 교육 트랙: 실전 자동화, 도구 비교, 수익화 주제 추가
   - 툴 트랙: 실전편 (코딩 없이 따라하기) 추가
+  - 유튜브 쇼츠 자동 업로드 추가 (썸네일 + Orus 음성)
 """
 
 import os
@@ -132,13 +133,13 @@ def get_track() -> tuple:
     """
     아침(hour < 12) → news
     저녁 홀수일     → edu
-    저녁 짝수일     → tool (tool_name=None → AI가 오늘 가장 핫한 툴 자동 선택)
+    저녁 짝수일     → tool (AI가 오늘 가장 핫한 툴 자동 선택)
     """
     now = datetime.now()
     if now.hour < 12:
         return "news", None
     if now.timetuple().tm_yday % 2 == 0:
-        return "tool", None  # ✅ 고정 순환 제거 — AI가 직접 선택
+        return "tool", None  # ✅ 고정 순환 제거
     return "edu", None
 
 
@@ -178,9 +179,6 @@ def decide_topic(track: str, tool_name: str = None) -> dict:
     year  = datetime.now().year
     today = datetime.now().strftime("%Y년 %m월 %d일")
 
-    # ─────────────────────────────────────────────
-    # 뉴스 트랙: 정책/요금/보안/업계 동향까지 확장
-    # ─────────────────────────────────────────────
     if track == "news":
         trend1 = search(f"Claude Anthropic AI coding update policy pricing {year} latest")
         trend2 = search(f"Cursor Windsurf Lovable Bolt vibe coding news {year} latest")
@@ -213,9 +211,6 @@ JSON만 출력 (코드블록 없이):
 }}
 """
 
-    # ─────────────────────────────────────────────
-    # 툴 트랙: AI가 오늘 가장 핫한 툴 자동 선택
-    # ─────────────────────────────────────────────
     elif track == "tool":
         trend1 = search(f"AI coding tool trending hot update {year} latest")
         trend2 = search(f"바이브코딩 AI 도구 인기 신기능 {year} 최신")
@@ -228,7 +223,7 @@ JSON만 출력 (코드블록 없이):
 
 위 정보를 바탕으로 오늘 다룰 AI 코딩 도구를 직접 선택하고, 포스트 주제를 결정해줘.
 
-선택 가능한 도구 예시 (이 외에도 오늘 핫한 도구면 선택 가능):
+선택 가능한 도구 예시 (오늘 핫한 도구면 이 외에도 선택 가능):
 Claude, ChatGPT, Gemini, Perplexity, Cursor, Windsurf, Lovable, Bolt.new,
 Replit, GitHub Copilot, Google AI Studio, Devin, v0, Codeium, Tabnine,
 NotebookLM, Midjourney, Canva AI, Notion AI 등
@@ -254,9 +249,6 @@ JSON만 출력 (코드블록 없이):
 }}
 """
 
-    # ─────────────────────────────────────────────
-    # 교육 트랙: 실전 자동화, 비교, 수익화 추가
-    # ─────────────────────────────────────────────
     else:  # edu
         trend1 = search(f"vibe coding 실전 자동화 튜토리얼 {year} Korea")
         trend2 = search(f"AI coding tool comparison workflow automation {year}")
@@ -270,7 +262,7 @@ JSON만 출력 (코드블록 없이):
 위 정보를 바탕으로 오늘 '바이브코딩 스쿨' 블로그의 교육 포스트 주제를 결정해줘.
 
 아래 주제 유형 중 오늘 가장 적합한 것 선택:
-- 실전 자동화 가이드 (블로그 자동화, SNS 자동화, 업무 자동화 등 코딩 없이 따라하기)
+- 실전 자동화 가이드 (블로그/SNS/업무 자동화, 코딩 없이 따라하기)
 - AI 도구 비교 (어떤 상황에 어떤 도구가 맞는지)
 - AI로 수익 내는 실전 방법 (부업, 프리랜서, 콘텐츠 제작)
 - 직장인/소상공인이 바로 쓰는 AI 활용법
@@ -338,7 +330,7 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 - 형식: [핵심 키워드] + [구체적 방법/결과] + [대상 또는 연도]
 - 핵심 키워드를 제목 앞부분에 배치
 - 숫자 포함 권장 (예: "3가지", "5분 만에", "10배")
-- 클릭베이트 절대 금지: "충격!", "경악!", "혁명!", "난리났다", "드디어" 같은 표현 사용 금지
+- 클릭베이트 절대 금지: "충격!", "경악!", "혁명!", "난리났다", "드디어" 사용 금지
 - 좋은 예: "Claude Code로 앱 만드는 법 - 초보자 완전 가이드 {year}"
 - 나쁜 예: "충격! AI가 드디어 해냈다! 개발자들 멘붕"
 
@@ -470,12 +462,10 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 """
     content_html = call_claude_raw(html_prompt, max_tokens=4000)
 
-    # 코드블록 감싸진 경우 제거
     if content_html.startswith("```"):
         lines = content_html.split("\n")
         content_html = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
 
-    # 마크다운 잔여물 후처리
     content_html = clean_markdown(content_html)
 
     meta_data["content_html"] = content_html
@@ -585,10 +575,9 @@ def get_blogger_service():
     return build("blogger", "v3", credentials=creds)
 
 
-def post_to_blogger(title: str, post_data: dict, image_b64: str) -> str:
+def post_to_blogger(title: str, post_data: dict, image_url: str) -> str:
     log.info("📤 Blogger 포스팅 중...")
 
-    image_url = upload_image_to_imgur(image_b64)
     if not image_url:
         image_url = "https://placehold.co/1200x630/6366f1/ffffff?text=Vibe+Coding+School"
         log.info("  ℹ️  placehold 이미지 사용")
@@ -629,7 +618,7 @@ def post_to_blogger(title: str, post_data: dict, image_b64: str) -> str:
 # ═════════════════════════════════════════════════════════════════════════════
 def main():
     log.info("=" * 60)
-    log.info("🚀 바이브코딩 스쿨 자동화 시작 (v4.2 — AI 주제/툴 자동 결정)")
+    log.info("🚀 바이브코딩 스쿨 자동화 시작 (v4.2)")
     log.info(f"   날짜: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     log.info("=" * 60)
 
@@ -645,8 +634,27 @@ def main():
         image_prompt = generate_image_prompt(best_title, post_data)
         image_b64    = generate_thumbnail(image_prompt)
 
-        blog_url = post_to_blogger(best_title, post_data, image_b64)
+        # imgur 업로드 (블로그 + 유튜브 공용)
+        image_url = upload_image_to_imgur(image_b64)
 
+        # ✅ 블로그 포스팅
+        blog_url = post_to_blogger(best_title, post_data, image_url)
+
+        # ✅ 유튜브 쇼츠 자동 업로드
+        try:
+            from youtube_shorts import post_youtube_shorts
+            youtube_url = post_youtube_shorts(
+                title=best_title,
+                content_html=post_data["content_html"],
+                image_url=image_url,
+                blog_url=blog_url,
+            )
+            if youtube_url:
+                log.info(f"  🎬 유튜브 쇼츠 완료: {youtube_url}")
+        except Exception as e:
+            log.warning(f"  ⚠️ 유튜브 쇼츠 실패 (블로그는 정상): {e}")
+
+        # ✅ 인스타그램 포스팅
         try:
             from instagram import post_instagram
             insta_url = post_instagram(
