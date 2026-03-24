@@ -6,6 +6,10 @@ AI 재테크 스쿨 — Blog Automation v1
   저녁 9시 → 💰 실전 트랙 / 🛠️ 툴 활용 트랙 (하루씩 번갈아)
 
 주제: AI로 돈 버는 법, 부업, 자동화 수익, 재테크
+
+v1.1 수정사항:
+  - generate_post를 메타(JSON) + 본문(HTML 순수텍스트) 2단계로 분리
+  - HTML 속성 따옴표로 인한 JSON 파싱 오류 완전 차단
 """
 
 import os
@@ -81,6 +85,10 @@ def search(query: str, max_tokens: int = 2000) -> str:
 
 
 def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
+    """
+    Claude API 호출 + JSON 파싱 (rate limit 재시도 포함)
+    ※ HTML이 포함되지 않는 메타데이터 전용으로만 사용할 것
+    """
     for attempt in range(3):
         try:
             time.sleep(15)
@@ -97,6 +105,27 @@ def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
                         raw = part
                         break
             return json.loads(raw.strip())
+        except Exception as e:
+            wait = 30 * (attempt + 1)
+            log.warning(f"  ⚠️ Claude 호출 실패 (시도 {attempt+1}/3): {e}")
+            time.sleep(wait)
+    raise RuntimeError("Claude API 호출 3회 모두 실패")
+
+
+def call_claude_raw(prompt: str, max_tokens: int = 4000) -> str:
+    """
+    Claude API 호출 후 텍스트 그대로 반환 (JSON 파싱 없음)
+    HTML 본문처럼 따옴표가 많아 JSON 파싱이 불안정한 경우에 사용
+    """
+    for attempt in range(3):
+        try:
+            time.sleep(15)
+            response = claude.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.content[0].text.strip()
         except Exception as e:
             wait = 30 * (attempt + 1)
             log.warning(f"  ⚠️ Claude 호출 실패 (시도 {attempt+1}/3): {e}")
@@ -188,7 +217,6 @@ JSON만 출력 (코드블록 없이):
 - {year}년 최신 기준
 - 실제로 수익을 낼 수 있는 구체적인 방법
 - 코딩 0% 초보자도 따라할 수 있는 내용
-- 예: "ChatGPT로 전자책 만들어 월 100만원 버는 법", "Claude로 블로그 자동화해서 부업하기"
 
 JSON만 출력 (코드블록 없이):
 {{
@@ -243,7 +271,13 @@ def collect_deep_research(topic_data: dict) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 3: 블로그 글 생성
+# STEP 3: 블로그 글 생성 (메타 + 본문 분리)
+#
+# ✅ 핵심 수정:
+#   기존: call_claude() 한 번으로 JSON 안에 HTML content_html 포함
+#         → HTML 속성의 큰따옴표가 JSON 파싱을 망가뜨림
+#   변경: 1단계 call_claude()로 메타(JSON)만 받고,
+#         2단계 call_claude_raw()로 HTML 본문만 순수 텍스트로 받음
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_post(track: str, topic_data: dict, deep_research: str) -> dict:
     log.info("✍️  블로그 글 작성 시작...")
@@ -320,15 +354,17 @@ def generate_post(track: str, topic_data: dict, deep_research: str) -> dict:
 분량: 2500~3000자
 """
 
-    prompt = f"""
+    # ─────────────────────────────────────────────
+    # 1단계: 메타데이터만 JSON으로 받기 (HTML 절대 포함 금지)
+    # ─────────────────────────────────────────────
+    log.info("  📋 1단계: 메타데이터 생성 중...")
+    meta_prompt = f"""
 {base_rules}
 
 ## 수집된 최신 정보
 {deep_research if deep_research else f"{topic} 관련 {year}년 최신 정보"}
 
-{structure}
-
-## 출력 (JSON만, 코드블록 없이)
+아래 JSON만 출력해줘 (코드블록 없이, HTML 절대 포함 금지):
 {{
   "title_candidates": [
     "[핵심키워드] + [방법/금액/결과] + [대상 or {year}] 형식의 SEO 제목 1 (클릭베이트 금지)",
@@ -339,11 +375,26 @@ def generate_post(track: str, topic_data: dict, deep_research: str) -> dict:
   ],
   "meta_description": "구글 클릭률 높은 메타설명 150자 이내",
   "tags": ["태그1", "태그2", "태그3"],
-  "slug": "seo-korean-slug-{year}",
-  "content_html": "완성된 HTML 본문 — 아래 스타일 가이드 반드시 적용"
+  "slug": "seo-korean-slug-{year}"
 }}
+"""
+    meta_data = call_claude(meta_prompt, max_tokens=800)
+    log.info("  ✅ 메타데이터 생성 완료")
 
-## HTML 스타일 가이드 (content_html에 반드시 적용)
+    # ─────────────────────────────────────────────
+    # 2단계: HTML 본문만 순수 텍스트로 받기
+    # JSON 파싱 없이 .text 그대로 사용
+    # → HTML 속성 따옴표로 인한 파싱 오류 완전 차단
+    # ─────────────────────────────────────────────
+    log.info("  ✍️  2단계: HTML 본문 생성 중...")
+    html_prompt = f"""
+{base_rules}
+{structure}
+
+## 수집된 최신 정보
+{deep_research if deep_research else f"{topic} 관련 {year}년 최신 정보"}
+
+## HTML 스타일 가이드 (반드시 적용)
 포인트 컬러: #059669 (에메랄드/초록) — AI 재테크 스쿨 브랜드 색상
 
 1. 핵심 요약 박스 (글 상단에 반드시 1개 사용):
@@ -358,11 +409,23 @@ def generate_post(track: str, topic_data: dict, deep_research: str) -> dict:
 4. h2 섹션 제목:
 <h2 style="font-size:18px;font-weight:700;color:#064E3B;margin:32px 0 16px;padding-bottom:8px;border-bottom:2px solid #059669">섹션 제목</h2>
 
-규칙: 모든 섹션에 위 스타일 중 하나 이상 반드시 사용. 일반 텍스트 나열 금지. 수익/금액 수치는 반드시 mark 태그로 강조.
+규칙:
+- 모든 섹션에 위 스타일 중 하나 이상 반드시 사용
+- 일반 텍스트 나열 금지
+- 수익/금액 수치는 반드시 mark 태그로 강조
+
+완성된 HTML 본문만 출력해줘. JSON 형식 금지, 마크다운 코드블록 금지, HTML 태그만 바로 출력.
 """
-    post_data = call_claude(prompt)
-    log.info("  ✅ 블로그 글 생성 완료")
-    return post_data
+    content_html = call_claude_raw(html_prompt, max_tokens=4000)
+
+    # 코드블록 감싸진 경우 제거
+    if content_html.startswith("```"):
+        lines = content_html.split("\n")
+        content_html = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+
+    meta_data["content_html"] = content_html
+    log.info(f"  ✅ 블로그 글 생성 완료 (본문 {len(content_html)}자)")
+    return meta_data
 
 
 # ═════════════════════════════════════════════════════════════════════════════
