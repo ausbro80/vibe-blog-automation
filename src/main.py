@@ -7,13 +7,18 @@
 
 툴 순환: Claude → Perplexity → Google AI Studio → Gemini →
          Codex → Cursor → Windsurf → Lovable → 반복
+
+v4.1 수정사항:
+  - generate_post를 메타(JSON) + 본문(HTML 순수텍스트) 2단계로 분리
+  - HTML이 JSON 안에 들어가 따옴표 충돌로 파싱 실패하던 버그 수정
+  - 마크다운 잔여물 후처리 추가 (**굵게** → <strong> 등)
 """
 
 import os
+import re
 import sys
 import json
 import time
-import base64
 import logging
 from datetime import datetime
 
@@ -36,7 +41,6 @@ GOOGLE_CREDENTIALS = os.environ["GOOGLE_CREDENTIALS_JSON"]
 
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-# 툴 사용법 트랙 순환 목록
 TOOL_LIST = [
     "Claude (Anthropic)",
     "Perplexity AI",
@@ -53,7 +57,6 @@ TOOL_LIST = [
 # 공통 유틸
 # ═════════════════════════════════════════════════════════════════════════════
 def extract_text(response) -> str:
-    """Claude 응답에서 텍스트 안전하게 추출"""
     texts = []
     for block in response.content:
         if hasattr(block, "text") and isinstance(block.text, str) and block.text.strip():
@@ -61,8 +64,15 @@ def extract_text(response) -> str:
     return "\n".join(texts)
 
 
+def clean_markdown(html: str) -> str:
+    """마크다운 잔여물을 HTML 태그로 변환"""
+    html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
+    html = re.sub(r'\*(.+?)\*', r'<em>\1</em>', html)
+    html = re.sub(r'^#{1,6}\s+(.+)$', r'<h3>\1</h3>', html, flags=re.MULTILINE)
+    return html
+
+
 def search(query: str, max_tokens: int = 2000) -> str:
-    """단일 쿼리 웹서치 후 텍스트 반환"""
     today = datetime.now().strftime("%Y년 %m월 %d일")
     for attempt in range(3):
         try:
@@ -77,8 +87,7 @@ def search(query: str, max_tokens: int = 2000) -> str:
                     "content": f"오늘({today}) 기준으로 '{query}'를 검색하고 핵심 내용을 한국어로 요약해줘.",
                 }],
             )
-            text = extract_text(response)
-            return text
+            return extract_text(response)
         except Exception as e:
             wait = 30 * (attempt + 1)
             log.warning(f"  ⚠️ 검색 실패 '{query}' (시도 {attempt+1}/3): {e}")
@@ -88,7 +97,7 @@ def search(query: str, max_tokens: int = 2000) -> str:
 
 
 def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
-    """Claude API 호출 + JSON 파싱 (rate limit 재시도 포함)"""
+    """메타데이터 전용 — JSON 파싱 (HTML 포함 금지)"""
     for attempt in range(3):
         try:
             time.sleep(15)
@@ -113,13 +122,26 @@ def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
     raise RuntimeError("Claude API 호출 3회 모두 실패")
 
 
+def call_claude_raw(prompt: str, max_tokens: int = 4000) -> str:
+    """HTML 본문 전용 — JSON 파싱 없이 텍스트 그대로 반환"""
+    for attempt in range(3):
+        try:
+            time.sleep(15)
+            response = claude.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.content[0].text.strip()
+        except Exception as e:
+            wait = 30 * (attempt + 1)
+            log.warning(f"  ⚠️ Claude 호출 실패 (시도 {attempt+1}/3): {e}")
+            log.warning(f"  ⏳ {wait}초 대기 후 재시도...")
+            time.sleep(wait)
+    raise RuntimeError("Claude API 호출 3회 모두 실패")
+
+
 def get_track() -> tuple:
-    """
-    아침(hour < 12) → news
-    저녁 홀수일     → edu
-    저녁 짝수일     → tool (툴 사용법, TOOL_LIST 순환)
-    Returns: (track, tool_name or None)
-    """
     now = datetime.now()
     if now.hour < 12:
         return "news", None
@@ -130,7 +152,7 @@ def get_track() -> tuple:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 이미지 업로드 — base64 → imgur 외부 URL
+# 이미지 업로드
 # ═════════════════════════════════════════════════════════════════════════════
 def upload_image_to_imgur(image_b64: str) -> str:
     if not image_b64:
@@ -204,7 +226,6 @@ JSON만 출력 (코드블록 없이):
 - 반드시 {year}년 최신 업데이트/기능 기반으로 작성
 - 코딩 0% 초보자도 따라할 수 있는 실용적인 주제
 - 단순 소개 말고 실제로 써먹을 수 있는 내용
-- 예: "Claude 최신 기능으로 블로그 자동화하는 법", "Perplexity Pro 업데이트 후 달라진 5가지"
 JSON만 출력 (코드블록 없이):
 {{
   "topic": "오늘의 구체적인 툴 사용법 주제 (한 문장, 최신 업데이트 반영)",
@@ -256,7 +277,7 @@ def collect_deep_news(topic_data: dict) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 3: 블로그 글 생성
+# STEP 3: 블로그 글 생성 (메타 + 본문 분리)
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
     log.info("✍️  블로그 글 작성 시작...")
@@ -264,7 +285,6 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
     today = datetime.now().strftime("%Y년 %m월 %d일")
     topic = topic_data["topic"]
 
-    # ✅ SEO 규칙 + 태그 규칙 + 인사이트 원칙 통합
     base_rules = f"""
 블로그명: 바이브코딩 스쿨 (VIBE CODING School)
 오늘 날짜: {today} ({year}년 기준으로만 작성)
@@ -278,14 +298,12 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 - {year}년 현재 기준 (다른 연도 절대 금지)
 - "vibe coding이란?", "AI 코딩이란?" 같은 기초 설명으로 글 시작 금지
 - 수집된 정보를 단순 요약하지 말고, 한국 독자(직장인/취준생/소상공인) 관점의 인사이트와 의견을 반드시 추가할 것
-  예: "이게 한국 취준생한테 어떤 의미인지", "실제로 이 기능을 어떻게 써먹을 수 있는지"
 
 ## SEO 제목 규칙 (반드시 준수)
 - 형식: [핵심 키워드] + [구체적 방법/결과] + [대상 또는 연도]
-- 핵심 키워드를 제목 앞부분에 배치 (구글은 앞단어에 가중치 부여)
+- 핵심 키워드를 제목 앞부분에 배치
 - 숫자 포함 권장 (예: "3가지", "5분 만에", "10배")
 - 클릭베이트 절대 금지: "충격!", "경악!", "혁명!", "난리났다", "드디어" 같은 표현 사용 금지
-- 검색 의도 매칭: 실제로 검색할 법한 표현 사용
 - 좋은 예: "Claude Code로 앱 만드는 법 - 초보자 완전 가이드 {year}"
 - 나쁜 예: "충격! AI가 드디어 해냈다! 개발자들 멘붕"
 
@@ -332,12 +350,15 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 분량: 2500~3000자
 """
 
-    prompt = f"""
+    # 1단계: 메타데이터만 JSON으로 받기
+    log.info("  📋 1단계: 메타데이터 생성 중...")
+    meta_prompt = f"""
 {base_rules}
+
 ## 수집된 최신 정보
 {deep_news if deep_news else f"{topic} 관련 {year}년 최신 정보"}
-{structure}
-## 출력 (JSON만, 코드블록 없이)
+
+아래 JSON만 출력해줘 (코드블록 없이, HTML 절대 포함 금지):
 {{
   "title_candidates": [
     "[핵심키워드] + [방법/결과] + [대상 or {year}] 형식의 SEO 제목 1 (클릭베이트 금지)",
@@ -348,17 +369,63 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
   ],
   "meta_description": "구글 클릭률 높은 메타설명 150자 이내",
   "tags": ["태그1", "태그2", "태그3"],
-  "slug": "seo-english-slug-{year}",
-  "content_html": "완성된 HTML 본문 (h2 h3 p ul li strong 사용)"
+  "slug": "seo-english-slug-{year}"
 }}
 """
-    post_data = call_claude(prompt)
-    log.info("  ✅ 블로그 글 생성 완료")
-    return post_data
+    meta_data = call_claude(meta_prompt, max_tokens=800)
+    log.info("  ✅ 메타데이터 생성 완료")
+
+    # 2단계: HTML 본문만 순수 텍스트로 받기
+    log.info("  ✍️  2단계: HTML 본문 생성 중...")
+    html_prompt = f"""
+{base_rules}
+{structure}
+
+## 수집된 최신 정보
+{deep_news if deep_news else f"{topic} 관련 {year}년 최신 정보"}
+
+## HTML 스타일 가이드 (반드시 적용)
+포인트 컬러: #6366F1 (인디고/보라) — 바이브코딩 스쿨 브랜드 색상
+
+1. 핵심 요약 박스 (글 상단에 반드시 1개 사용):
+<div style="background:#F3F0FF;border-left:4px solid #6366F1;border-radius:0 8px 8px 0;padding:16px 20px;margin:24px 0"><p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#4338CA">💡 핵심 포인트</p><p style="margin:0;font-size:14px;color:#3730A3;line-height:1.7">핵심 내용</p></div>
+
+2. 번호 카드 (단계별 설명에 사용, 3~5개):
+<div style="background:#fff;border:1px solid #E0E7FF;border-radius:12px;padding:16px;display:flex;gap:16px;align-items:flex-start;margin-bottom:12px"><div style="background:#6366F1;color:#fff;font-size:14px;font-weight:700;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0">1</div><div><p style="margin:0 0 6px;font-size:15px;font-weight:700;color:#1E1B4B">제목</p><p style="margin:0;font-size:14px;color:#4B5563;line-height:1.6">내용</p></div></div>
+
+3. 주의/팁 박스:
+<div style="background:#EEF2FF;border-radius:12px;padding:16px 20px;margin:20px 0"><p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#6366F1">⚠️ 주의사항</p><p style="margin:0;font-size:14px;color:#3730A3;line-height:1.6">내용. 키워드는 <mark style="background:#C7D2FE;color:#3730A3;padding:2px 6px;border-radius:4px">이렇게 강조</mark></p></div>
+
+4. h2 섹션 제목:
+<h2 style="font-size:18px;font-weight:700;color:#1E1B4B;margin:32px 0 16px;padding-bottom:8px;border-bottom:2px solid #6366F1">섹션 제목</h2>
+
+규칙:
+- 모든 섹션에 위 스타일 중 하나 이상 반드시 사용
+- 일반 텍스트 나열 금지
+- 중요 키워드는 <mark style="background:#C7D2FE;color:#3730A3;padding:2px 6px;border-radius:4px">이렇게 강조</mark>
+- **굵게**, *기울임*, ## 제목 같은 마크다운 문법 절대 사용 금지
+- 굵게 강조할 때는 반드시 <strong> 태그 사용
+- 줄바꿈은 반드시 <br> 또는 <p> 태그 사용
+
+완성된 HTML 본문만 출력해줘. JSON 형식 금지, 마크다운 코드블록 금지, HTML 태그만 바로 출력.
+"""
+    content_html = call_claude_raw(html_prompt, max_tokens=4000)
+
+    # 코드블록 감싸진 경우 제거
+    if content_html.startswith("```"):
+        lines = content_html.split("\n")
+        content_html = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+
+    # 마크다운 잔여물 후처리
+    content_html = clean_markdown(content_html)
+
+    meta_data["content_html"] = content_html
+    log.info(f"  ✅ 블로그 글 생성 완료 (본문 {len(content_html)}자)")
+    return meta_data
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 4: SEO 제목 선택 (이중 필터 — SEO 규칙 기반)
+# STEP 4: SEO 제목 선택
 # ═════════════════════════════════════════════════════════════════════════════
 def select_best_title(post_data: dict) -> str:
     log.info("🔍 SEO 제목 최적화...")
@@ -413,7 +480,7 @@ def generate_image_prompt(title: str, post_data: dict) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 6: 이미지 생성 (Gemini 2.5 Flash Image)
+# STEP 6: 이미지 생성
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_thumbnail(image_prompt: str) -> str:
     log.info("🎨 썸네일 생성 중... (Gemini 2.5 Flash Image / 무료)")
@@ -521,7 +588,6 @@ def main():
 
         blog_url = post_to_blogger(best_title, post_data, image_b64)
 
-        # ✅ 블로그 포스팅 완료 후 인스타그램 카드뉴스 자동 포스팅
         try:
             from instagram import post_instagram
             insta_url = post_instagram(
