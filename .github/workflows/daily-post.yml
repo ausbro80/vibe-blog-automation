@@ -1,8 +1,8 @@
-name: 🤖 Vibe Coding Blog 자동 포스팅 (하루 2회)
+name: Vibe Coding Blog 자동 포스팅 (하루 2회)
 on:
   schedule:
-    - cron: "0 0 * * *"    # 매일 오전 09:00 KST (UTC 00:00)
-    - cron: "0 12 * * *"   # 매일 저녁 21:00 KST (UTC 12:00)
+    - cron: "0 0 * * *"
+    - cron: "0 12 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -20,22 +20,22 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: 📥 코드 체크아웃
+      - name: 코드 체크아웃
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: 🐍 Python 3.11 설치
+      - name: Python 3.11 설치
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
-      - name: 📦 패키지 설치
+      - name: 패키지 설치
         run: pip install -r requirements.txt
-     - name: 🔤 한글 폰트 + ffmpeg 설치
-  run: |
-    sudo apt-get update --fix-missing || true
-    sudo apt-get install -y --fix-missing fonts-noto-cjk ffmpeg || true
-      - name: 🚀 블로그 자동화 실행
+      - name: 한글 폰트 + ffmpeg 설치
+        run: |
+          sudo apt-get update --fix-missing || true
+          sudo apt-get install -y --fix-missing fonts-noto-cjk ffmpeg || true
+      - name: 블로그 자동화 실행
         env:
           ANTHROPIC_API_KEY:        ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY:           ${{ secrets.GEMINI_API_KEY }}
@@ -48,7 +48,7 @@ jobs:
           CLOUDINARY_API_SECRET:    ${{ secrets.CLOUDINARY_API_SECRET }}
           DRY_RUN:                  ${{ inputs.dry_run || 'false' }}
         run: python src/main.py
-      - name: ♻️ 저장소 활성 유지 (스케줄러 자동 비활성화 방지)
+      - name: 저장소 활성 유지
         run: |
           git config user.email "action@github.com"
           git config user.name "GitHub Action"
