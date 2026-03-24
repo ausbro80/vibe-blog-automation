@@ -1,12 +1,15 @@
 """
-바이브코딩 스쿨 — YouTube Shorts 자동화
+바이브코딩 스쿨 — YouTube Shorts 자동화 v2
 ─────────────────────────────────────────
-블로그 글 발행 후 자동으로:
-  1. 쇼츠 스크립트 생성 (Claude)
-  2. 쇼츠용 9:16 이미지 생성 (Gemini Image)
-  3. 음성 생성 (Gemini TTS - Charon 시원한 남성)
-  4. 이미지 + 음성 합쳐서 영상 제작 (ffmpeg)
-  5. 유튜브 자동 업로드 (YouTube Data API)
+구조:
+  [인트로 3초] 로고 + 고정 인사말 음성
+  [카드 롤링]  인스타 카드 5장 + 각 카드별 대사 + 하단 자막
+  [아웃트로 2초] CTA
+
+사이즈: 1080x1920 (9:16)
+카드:   중앙에 1080x1080 배치
+자막:   하단 자막 롤링
+음성:   Gemini TTS - Charon
 """
 
 import os
@@ -19,8 +22,10 @@ import tempfile
 import subprocess
 import shutil
 from pathlib import Path
+from io import BytesIO
 
 import requests
+from PIL import Image, ImageDraw, ImageFont
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -34,61 +39,84 @@ GOOGLE_CREDENTIALS = os.environ["GOOGLE_CREDENTIALS_JSON"]
 
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
+# 고정 인트로 대사
+INTRO_SCRIPT = "안녕하세요, 바이브코딩스쿨입니다! 오늘도 좋은 정보 빠르게 가져왔으니 30초만 집중하세요!"
+OUTRO_SCRIPT = "자세한 내용은 설명란 링크에서 확인하세요! 구독하고 매일 AI 최신 정보 받아보세요!"
+
+W, H = 1080, 1920  # 쇼츠 사이즈
+CARD_SIZE = 1080    # 카드 정방형 사이즈
+LOGO_PATH = os.path.join(os.path.dirname(__file__), "logo.png")
+
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 1: 쇼츠 스크립트 + 메타데이터 생성
+# 폰트
 # ═════════════════════════════════════════════════════════════════════════════
-def generate_shorts_script(title: str, content_html: str, blog_url: str) -> dict:
-    log.info("📝 쇼츠 스크립트 생성 중...")
+def get_font_path(bold: bool = False) -> str:
+    candidates = [
+        "/usr/share/fonts/truetype/noto/NotoSansCJKkr-Bold.otf" if bold else
+        "/usr/share/fonts/truetype/noto/NotoSansCJKkr-Regular.otf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Bold.otf" if bold else
+        "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Regular.otf",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc" if bold else
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def load_font(size: int, bold: bool = False):
+    path = get_font_path(bold)
+    if path:
+        return ImageFont.truetype(path, size)
+    return ImageFont.load_default()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STEP 1: 카드별 대사 생성
+# ═════════════════════════════════════════════════════════════════════════════
+def generate_card_scripts(title: str, content_html: str, blog_url: str, num_cards: int = 5) -> dict:
+    log.info("📝 카드별 대사 생성 중...")
 
     text = re.sub(r'<[^>]+>', '', content_html)
     text = re.sub(r'\s+', ' ', text).strip()
     text = text[:2000]
 
+    cards_format = "\n".join([f'  {{"card": {i+1}, "script": "카드 {i+1} 대사"}}' for i in range(num_cards)])
+
     response = claude.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=800,
+        max_tokens=1000,
         messages=[{
             "role": "user",
-            "content": f"""아래 블로그 글을 유튜브 쇼츠용 나레이션 스크립트로 만들어줘.
+            "content": f"""유튜브 쇼츠용 카드별 나레이션을 만들어줘.
 
 블로그 제목: {title}
-블로그 내용 요약: {text}
-블로그 링크: {blog_url}
+내용: {text}
 
-조건:
-- 총 45~55초 분량 (약 200~250자)
-- 훅(3초) → 핵심 내용(35초) → CTA(10초) 구조
-- 친근하고 자연스러운 말투 ("~해요", "~거예요")
-- 마지막에 반드시 "자세한 내용은 설명란 링크에서 확인하세요!" 포함
-- 나레이션 텍스트만 출력 (지문/설명 없이)
-
-나레이션:"""
-        }]
-    )
-
-    script = response.content[0].text.strip()
-    log.info(f"  ✅ 스크립트 생성 완료 ({len(script)}자)")
-
-    meta_response = claude.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=300,
-        messages=[{
-            "role": "user",
-            "content": f"""유튜브 쇼츠용 메타데이터를 만들어줘.
-
-블로그 제목: {title}
+카드 {num_cards}장에 맞게 각 카드별 대사를 만들어줘.
+- 카드 1: 훅 (궁금증 유발, 15자 이내)
+- 카드 2~4: 핵심 내용 각 1가지 (30자 이내)
+- 카드 5: 마무리 요약 (20자 이내)
+- 친근한 말투 (~해요, ~거예요)
+- 각 대사는 해당 카드에서 읽히는 시간 (2~3초) 분량
 
 JSON만 출력 (코드블록 없이):
 {{
-  "youtube_title": "쇼츠 제목 (40자 이내, #Shorts 포함)",
-  "youtube_description": "설명 (150자 이내)",
+  "card_scripts": [
+{cards_format}
+  ],
+  "youtube_title": "쇼츠 제목 40자 이내 #Shorts 포함",
+  "youtube_description": "설명 150자 이내",
   "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"]
 }}"""
         }]
     )
 
-    raw = meta_response.content[0].text.strip()
+    raw = response.content[0].text.strip()
     if "```" in raw:
         for part in raw.split("```"):
             part = part.strip().lstrip("json").strip()
@@ -96,58 +124,15 @@ JSON만 출력 (코드블록 없이):
                 raw = part
                 break
     meta = json.loads(raw)
-    meta["script"] = script
     meta["youtube_description"] = meta["youtube_description"] + f"\n\n🔗 {blog_url}"
-
+    log.info(f"  ✅ 카드별 대사 생성 완료")
     return meta
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 2: 쇼츠용 9:16 세로 이미지 생성 (Gemini)
-# ═════════════════════════════════════════════════════════════════════════════
-def generate_shorts_image(title: str) -> bytes:
-    log.info("🖼️  쇼츠용 세로 이미지 생성 중... (9:16)")
-
-    prompt = (
-        f"YouTube Shorts vertical thumbnail for: {title}. "
-        "Modern flat illustration, vibrant colors, 9:16 vertical portrait format, "
-        "no text no letters, professional tech design, bright friendly, "
-        "AI coding technology theme"
-    )
-
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.5-flash-image:generateContent?key={GEMINI_API_KEY}"
-    )
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]},
-    }
-
-    for attempt in range(3):
-        try:
-            resp = requests.post(url, json=payload, timeout=90)
-            resp.raise_for_status()
-            data = resp.json()
-            for part in data["candidates"][0]["content"]["parts"]:
-                if "inlineData" in part:
-                    img_bytes = base64.b64decode(part["inlineData"]["data"])
-                    log.info(f"  ✅ 쇼츠 이미지 생성 완료 ({len(img_bytes)} bytes)")
-                    return img_bytes
-        except Exception as e:
-            wait = 30 * (attempt + 1)
-            log.warning(f"  ⚠️ 이미지 생성 실패 (시도 {attempt+1}/3): {e}")
-            time.sleep(wait)
-
-    raise RuntimeError("쇼츠 이미지 생성 3회 모두 실패")
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# STEP 3: Gemini TTS로 음성 생성 (Charon - 시원하고 카리스마 있는 남성)
+# STEP 2: Gemini TTS 음성 생성
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_voice(script: str) -> bytes:
-    log.info("🎙️  음성 생성 중... (Gemini TTS - Charon)")
-
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"gemini-2.5-flash-preview-tts:generateContent?key={GEMINI_API_KEY}"
@@ -158,9 +143,7 @@ def generate_voice(script: str) -> bytes:
             "responseModalities": ["AUDIO"],
             "speechConfig": {
                 "voiceConfig": {
-                    "prebuiltVoiceConfig": {
-                        "voiceName": "Charon"
-                    }
+                    "prebuiltVoiceConfig": {"voiceName": "Charon"}
                 }
             }
         }
@@ -172,9 +155,7 @@ def generate_voice(script: str) -> bytes:
             resp.raise_for_status()
             data = resp.json()
             audio_b64 = data["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
-            audio_bytes = base64.b64decode(audio_b64)
-            log.info(f"  ✅ 음성 생성 완료 ({len(audio_bytes)} bytes)")
-            return audio_bytes
+            return base64.b64decode(audio_b64)
         except Exception as e:
             wait = 30 * (attempt + 1)
             log.warning(f"  ⚠️ 음성 생성 실패 (시도 {attempt+1}/3): {e}")
@@ -183,73 +164,242 @@ def generate_voice(script: str) -> bytes:
     raise RuntimeError("음성 생성 3회 모두 실패")
 
 
+def save_voice_as_wav(audio_bytes: bytes, path: Path) -> Path:
+    """raw PCM → WAV 변환"""
+    raw_path = path.parent / "voice.raw"
+    raw_path.write_bytes(audio_bytes)
+
+    wav_cmd = [
+        "ffmpeg", "-y",
+        "-f", "s16le", "-ar", "24000", "-ac", "1",
+        "-i", str(raw_path),
+        str(path)
+    ]
+    result = subprocess.run(wav_cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        log.warning("  ⚠️ WAV 변환 실패, raw 사용")
+        return raw_path
+    return path
+
+
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 4: 이미지 + 음성 → 쇼츠 영상 합성 (ffmpeg)
+# STEP 3: 인트로 프레임 생성 (로고 + 배경)
 # ═════════════════════════════════════════════════════════════════════════════
-def create_shorts_video(image_bytes: bytes, audio_bytes: bytes) -> str:
-    log.info("🎬 쇼츠 영상 합성 중... (ffmpeg)")
+def make_intro_frame() -> bytes:
+    """1080x1920 인트로 이미지 생성"""
+    img = Image.new("RGB", (W, H), color=(10, 10, 20))
+    draw = ImageDraw.Draw(img)
+
+    # 배경 그라데이션
+    for y in range(H):
+        t = y / H
+        r = int(30 + (80 - 30) * t)
+        g = int(0 + (20 - 0) * t)
+        b = int(60 + (120 - 60) * t)
+        draw.line([(0, y), (W, y)], fill=(r, g, b))
+
+    # 로고 삽입
+    if os.path.exists(LOGO_PATH):
+        try:
+            logo = Image.open(LOGO_PATH).convert("RGBA")
+            logo_w = 700
+            ratio = logo_w / logo.width
+            logo_h = int(logo.height * ratio)
+            logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
+            x = (W - logo_w) // 2
+            y = (H - logo_h) // 2 - 100
+            img.paste(logo, (x, y), logo)
+        except Exception as e:
+            log.warning(f"  ⚠️ 로고 삽입 실패: {e}")
+
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STEP 4: 카드 프레임 생성 (1080x1920 - 카드 중앙 + 하단 자막 영역)
+# ═════════════════════════════════════════════════════════════════════════════
+def make_card_frame(card_image_bytes: bytes, subtitle: str) -> bytes:
+    """카드 이미지를 1080x1920 프레임에 배치 + 하단 자막 영역"""
+
+    # 배경
+    frame = Image.new("RGB", (W, H), color=(10, 10, 20))
+    draw = ImageDraw.Draw(frame)
+
+    # 배경 그라데이션
+    for y in range(H):
+        t = y / H
+        r = int(20 + (60 - 20) * t)
+        g = int(0 + (10 - 0) * t)
+        b = int(40 + (80 - 40) * t)
+        draw.line([(0, y), (W, y)], fill=(r, g, b))
+
+    # 카드 이미지 (1080x1080) 중앙 상단 배치
+    try:
+        card = Image.open(BytesIO(card_image_bytes)).convert("RGB")
+        card = card.resize((CARD_SIZE, CARD_SIZE), Image.LANCZOS)
+        card_y = (H - CARD_SIZE) // 2 - 80  # 살짝 위로
+        frame.paste(card, (0, card_y))
+    except Exception as e:
+        log.warning(f"  ⚠️ 카드 이미지 삽입 실패: {e}")
+
+    # 하단 자막 영역 (반투명 검정 배경)
+    subtitle_bg_y = H - 280
+    subtitle_bg = Image.new("RGBA", (W, 280), (0, 0, 0, 180))
+    frame.paste(Image.fromarray(
+        __import__('numpy').array(subtitle_bg)[:, :, :3]
+    ), (0, subtitle_bg_y))
+
+    # 자막 텍스트
+    draw = ImageDraw.Draw(frame)
+    font = load_font(52, bold=True)
+
+    # 텍스트 줄바꿈
+    max_width = W - 80
+    words = subtitle.split()
+    lines, current = [], ""
+    for word in words:
+        test = (current + " " + word).strip()
+        bbox = draw.textbbox((0, 0), test, font=font)
+        if bbox[2] > max_width and current:
+            lines.append(current)
+            current = word
+        else:
+            current = test
+    if current:
+        lines.append(current)
+
+    # 자막 그리기
+    y = subtitle_bg_y + 40
+    for line in lines[:3]:  # 최대 3줄
+        bbox = draw.textbbox((0, 0), line, font=font)
+        x = (W - (bbox[2] - bbox[0])) // 2
+        # 외곽선
+        for dx, dy in [(-2, -2), (2, -2), (-2, 2), (2, 2)]:
+            draw.text((x + dx, y + dy), line, font=font, fill=(0, 0, 0))
+        # 메인 텍스트
+        draw.text((x, y), line, font=font, fill=(255, 255, 255))
+        y += bbox[3] - bbox[1] + 12
+
+    buf = BytesIO()
+    frame.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STEP 5: 전체 영상 합성
+# ═════════════════════════════════════════════════════════════════════════════
+def create_shorts_video(
+    card_image_urls: list,
+    card_scripts: list,
+    title: str
+) -> str:
+    log.info("🎬 쇼츠 영상 합성 중...")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
+        segments = []  # (video_path, audio_path) 리스트
 
-        # 이미지 저장
-        img_path = tmpdir / "thumbnail.jpg"
-        img_path.write_bytes(image_bytes)
+        # ── 인트로 세그먼트 ──
+        log.info("  🎬 인트로 생성 중...")
+        intro_img_bytes = make_intro_frame()
+        intro_img_path = tmpdir / "intro.png"
+        intro_img_path.write_bytes(intro_img_bytes)
 
-        # 음성 저장 (Gemini TTS → LINEAR16 PCM)
-        audio_raw_path = tmpdir / "voice.raw"
-        audio_raw_path.write_bytes(audio_bytes)
+        intro_audio_bytes = generate_voice(INTRO_SCRIPT)
+        intro_audio_path = save_voice_as_wav(intro_audio_bytes, tmpdir / "intro_audio.wav")
 
-        # raw PCM → WAV 변환
-        audio_path = tmpdir / "voice.wav"
-        wav_cmd = [
+        intro_video = tmpdir / "intro.mp4"
+        subprocess.run([
             "ffmpeg", "-y",
-            "-f", "s16le",
-            "-ar", "24000",
-            "-ac", "1",
-            "-i", str(audio_raw_path),
-            str(audio_path)
-        ]
-        wav_result = subprocess.run(wav_cmd, capture_output=True, text=True)
-        if wav_result.returncode != 0:
-            audio_path = audio_raw_path
-            log.warning("  ⚠️ WAV 변환 실패, 원본 사용")
+            "-loop", "1", "-i", str(intro_img_path),
+            "-i", str(intro_audio_path),
+            "-c:v", "libx264", "-tune", "stillimage",
+            "-c:a", "aac", "-b:a", "192k",
+            "-vf", f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black",
+            "-shortest", "-pix_fmt", "yuv420p",
+            str(intro_video)
+        ], capture_output=True)
+        segments.append(intro_video)
 
-        # 출력 영상
-        output_path = tmpdir / "shorts.mp4"
+        # ── 카드 세그먼트들 ──
+        for i, (card_url, script_data) in enumerate(zip(card_image_urls, card_scripts)):
+            log.info(f"  🎬 카드 {i+1} 세그먼트 생성 중...")
 
-        # ffmpeg — 9:16 이미지 + 음성 합치기
-        cmd = [
+            # 카드 이미지 다운로드
+            card_resp = requests.get(card_url, timeout=30)
+            card_frame_bytes = make_card_frame(card_resp.content, script_data.get("script", ""))
+
+            card_img_path = tmpdir / f"card_{i}.png"
+            card_img_path.write_bytes(card_frame_bytes)
+
+            # 카드 음성
+            card_audio_bytes = generate_voice(script_data.get("script", ""))
+            card_audio_path = save_voice_as_wav(card_audio_bytes, tmpdir / f"card_{i}_audio.wav")
+
+            card_video = tmpdir / f"card_{i}.mp4"
+            subprocess.run([
+                "ffmpeg", "-y",
+                "-loop", "1", "-i", str(card_img_path),
+                "-i", str(card_audio_path),
+                "-c:v", "libx264", "-tune", "stillimage",
+                "-c:a", "aac", "-b:a", "192k",
+                "-vf", f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black",
+                "-shortest", "-pix_fmt", "yuv420p",
+                str(card_video)
+            ], capture_output=True)
+            segments.append(card_video)
+
+        # ── 아웃트로 세그먼트 ──
+        log.info("  🎬 아웃트로 생성 중...")
+        outro_img_bytes = make_intro_frame()
+        outro_img_path = tmpdir / "outro.png"
+        outro_img_path.write_bytes(outro_img_bytes)
+
+        outro_audio_bytes = generate_voice(OUTRO_SCRIPT)
+        outro_audio_path = save_voice_as_wav(outro_audio_bytes, tmpdir / "outro_audio.wav")
+
+        outro_video = tmpdir / "outro.mp4"
+        subprocess.run([
             "ffmpeg", "-y",
-            "-loop", "1",
-            "-i", str(img_path),
-            "-i", str(audio_path),
-            "-c:v", "libx264",
-            "-tune", "stillimage",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
-            "-shortest",
-            "-movflags", "+faststart",
-            "-pix_fmt", "yuv420p",
-            str(output_path)
-        ]
+            "-loop", "1", "-i", str(outro_img_path),
+            "-i", str(outro_audio_path),
+            "-c:v", "libx264", "-tune", "stillimage",
+            "-c:a", "aac", "-b:a", "192k",
+            "-vf", f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black",
+            "-shortest", "-pix_fmt", "yuv420p",
+            str(outro_video)
+        ], capture_output=True)
+        segments.append(outro_video)
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"ffmpeg 실패: {result.stderr}")
+        # ── 세그먼트 합치기 ──
+        log.info("  🔗 세그먼트 합치는 중...")
+        concat_list = tmpdir / "concat.txt"
+        with open(concat_list, "w") as f:
+            for seg in segments:
+                f.write(f"file '{seg}'\n")
 
         final_path = f"/tmp/shorts_{int(time.time())}.mp4"
-        shutil.copy(str(output_path), final_path)
+        result = subprocess.run([
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", str(concat_list),
+            "-c", "copy",
+            final_path
+        ], capture_output=True, text=True)
+
+        if result.returncode != 0:
+            raise RuntimeError(f"ffmpeg concat 실패: {result.stderr}")
 
         log.info(f"  ✅ 영상 합성 완료: {final_path}")
         return final_path
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 5: 유튜브 업로드
+# STEP 6: 유튜브 업로드
 # ═════════════════════════════════════════════════════════════════════════════
-def upload_to_youtube(video_path: str, shorts_meta: dict) -> str:
+def upload_to_youtube(video_path: str, meta: dict) -> str:
     log.info("📤 유튜브 업로드 중...")
 
     creds_info = json.loads(GOOGLE_CREDENTIALS)
@@ -265,9 +415,9 @@ def upload_to_youtube(video_path: str, shorts_meta: dict) -> str:
 
     body = {
         "snippet": {
-            "title": shorts_meta["youtube_title"],
-            "description": shorts_meta["youtube_description"],
-            "tags": shorts_meta.get("tags", []) + ["바이브코딩", "Shorts", "AI코딩"],
+            "title": meta["youtube_title"],
+            "description": meta["youtube_description"],
+            "tags": meta.get("tags", []) + ["바이브코딩", "Shorts", "AI코딩"],
             "categoryId": "28",
             "defaultLanguage": "ko",
         },
@@ -277,18 +427,8 @@ def upload_to_youtube(video_path: str, shorts_meta: dict) -> str:
         }
     }
 
-    media = MediaFileUpload(
-        video_path,
-        mimetype="video/mp4",
-        resumable=True,
-        chunksize=1024 * 1024
-    )
-
-    request = youtube.videos().insert(
-        part="snippet,status",
-        body=body,
-        media_body=media
-    )
+    media = MediaFileUpload(video_path, mimetype="video/mp4", resumable=True, chunksize=1024*1024)
+    request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
 
     response = None
     while response is None:
@@ -307,36 +447,31 @@ def upload_to_youtube(video_path: str, shorts_meta: dict) -> str:
 # ═════════════════════════════════════════════════════════════════════════════
 # 메인 함수 — main.py에서 호출
 # ═════════════════════════════════════════════════════════════════════════════
-def post_youtube_shorts(title: str, content_html: str, blog_url: str, card_image_urls: list = None) -> str:
-    """
-    블로그 포스팅 완료 후 호출.
-    title           : 블로그 제목
-    content_html    : 블로그 본문 HTML
-    blog_url        : 블로그 포스트 URL
-    card_image_urls : 인스타 카드 이미지 URL 리스트 (없으면 자체 생성)
-    """
+def post_youtube_shorts(
+    title: str,
+    content_html: str,
+    blog_url: str,
+    card_image_urls: list = None
+) -> str:
     try:
-        # 1. 스크립트 + 메타데이터 생성
-        shorts_meta = generate_shorts_script(title, content_html, blog_url)
+        # 카드 이미지 없으면 스킵
+        if not card_image_urls:
+            log.warning("  ⚠️ 카드 이미지 없음 → 유튜브 쇼츠 스킵")
+            return ""
 
-        # 2. 이미지 준비 (인스타 카드 있으면 재활용, 없으면 자체 생성)
-        if card_image_urls:
-            log.info("🖼️  인스타 카드 이미지 재활용 중...")
-            img_resp = requests.get(card_image_urls[0], timeout=30)
-            image_bytes = img_resp.content
-            log.info(f"  ✅ 카드 이미지 로드 완료 ({len(image_bytes)} bytes)")
-        else:
-            log.info("🖼️  인스타 카드 없음 → 자체 이미지 생성")
-            image_bytes = generate_shorts_image(title)
+        # 1. 카드별 대사 생성
+        meta = generate_card_scripts(title, content_html, blog_url, len(card_image_urls))
+        card_scripts = meta.get("card_scripts", [])
 
-        # 3. 음성 생성 (Charon)
-        audio_bytes = generate_voice(shorts_meta["script"])
+        # 카드 수 맞추기
+        while len(card_scripts) < len(card_image_urls):
+            card_scripts.append({"card": len(card_scripts)+1, "script": "확인해보세요!"})
 
-        # 4. 영상 합성
-        video_path = create_shorts_video(image_bytes, audio_bytes)
+        # 2. 영상 합성
+        video_path = create_shorts_video(card_image_urls, card_scripts, title)
 
-        # 5. 유튜브 업로드
-        youtube_url = upload_to_youtube(video_path, shorts_meta)
+        # 3. 유튜브 업로드
+        youtube_url = upload_to_youtube(video_path, meta)
 
         return youtube_url
 
