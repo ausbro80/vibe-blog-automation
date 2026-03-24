@@ -16,7 +16,7 @@ jobs:
   post-blog:
     name: 블로그 글 생성 및 포스팅
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: write
     steps:
