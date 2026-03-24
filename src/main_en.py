@@ -95,7 +95,7 @@ def search(query: str, max_tokens: int = 2000) -> str:
     return ""
 
 
-def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
+def call_claude(prompt: str, max_tokens: int = 6000) -> dict:
     """Metadata only — JSON parsing (no HTML)"""
     for attempt in range(3):
         try:
@@ -120,7 +120,7 @@ def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
     raise RuntimeError("Claude API failed after 3 attempts")
 
 
-def call_claude_raw(prompt: str, max_tokens: int = 4000) -> str:
+def call_claude_raw(prompt: str, max_tokens: int = 6000) -> str:
     """HTML body only — returns raw text, no JSON parsing"""
     for attempt in range(3):
         try:
@@ -410,7 +410,7 @@ Rules:
 
 Output the complete HTML body only. No JSON, no markdown code blocks — raw HTML tags only.
 """
-    content_html = call_claude_raw(html_prompt, max_tokens=4000)
+    content_html = call_claude_raw(html_prompt, max_tokens=6000)
 
     # Strip code block wrapper if present
     if content_html.startswith("```"):
