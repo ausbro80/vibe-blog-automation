@@ -3,25 +3,28 @@
 ─────────────────────────────────────────
 블로그 글 발행 후 자동으로:
   1. 쇼츠 스크립트 생성 (Claude)
-  2. 음성 생성 (Gemini TTS - Puck 남성)
-  3. 썸네일 이미지 + 음성 합쳐서 영상 제작 (ffmpeg)
-  4. 유튜브 자동 업로드 (YouTube Data API)
+  2. 쇼츠용 9:16 이미지 생성 (Gemini Image)
+  3. 음성 생성 (Gemini TTS - Charon 시원한 남성)
+  4. 이미지 + 음성 합쳐서 영상 제작 (ffmpeg)
+  5. 유튜브 자동 업로드 (YouTube Data API)
 """
 
 import os
+import re
 import json
 import time
 import base64
 import logging
 import tempfile
 import subprocess
+import shutil
 from pathlib import Path
 
-import anthropic
 import requests
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+import anthropic
 
 log = logging.getLogger(__name__)
 
@@ -33,16 +36,14 @@ claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 1: 쇼츠 스크립트 생성
+# STEP 1: 쇼츠 스크립트 + 메타데이터 생성
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_shorts_script(title: str, content_html: str, blog_url: str) -> dict:
     log.info("📝 쇼츠 스크립트 생성 중...")
 
-    # HTML 태그 제거해서 텍스트만 추출
-    import re
     text = re.sub(r'<[^>]+>', '', content_html)
     text = re.sub(r'\s+', ' ', text).strip()
-    text = text[:2000]  # 앞부분 2000자만 사용
+    text = text[:2000]
 
     response = claude.messages.create(
         model="claude-sonnet-4-20250514",
@@ -69,7 +70,6 @@ def generate_shorts_script(title: str, content_html: str, blog_url: str) -> dict
     script = response.content[0].text.strip()
     log.info(f"  ✅ 스크립트 생성 완료 ({len(script)}자)")
 
-    # 유튜브 제목/설명/태그도 생성
     meta_response = claude.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=300,
@@ -82,7 +82,7 @@ def generate_shorts_script(title: str, content_html: str, blog_url: str) -> dict
 JSON만 출력 (코드블록 없이):
 {{
   "youtube_title": "쇼츠 제목 (40자 이내, #Shorts 포함)",
-  "youtube_description": "설명 (블로그 링크 포함, 150자 이내)",
+  "youtube_description": "설명 (150자 이내)",
   "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"]
 }}"""
         }]
@@ -103,25 +103,63 @@ JSON만 출력 (코드블록 없이):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 2: Gemini TTS로 음성 생성 (Orus 남성)
+# STEP 2: 쇼츠용 9:16 세로 이미지 생성 (Gemini)
+# ═════════════════════════════════════════════════════════════════════════════
+def generate_shorts_image(title: str) -> bytes:
+    log.info("🖼️  쇼츠용 세로 이미지 생성 중... (9:16)")
+
+    prompt = (
+        f"YouTube Shorts vertical thumbnail for: {title}. "
+        "Modern flat illustration, vibrant colors, 9:16 vertical portrait format, "
+        "no text no letters, professional tech design, bright friendly, "
+        "AI coding technology theme"
+    )
+
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"gemini-2.5-flash-image:generateContent?key={GEMINI_API_KEY}"
+    )
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]},
+    }
+
+    for attempt in range(3):
+        try:
+            resp = requests.post(url, json=payload, timeout=90)
+            resp.raise_for_status()
+            data = resp.json()
+            for part in data["candidates"][0]["content"]["parts"]:
+                if "inlineData" in part:
+                    img_bytes = base64.b64decode(part["inlineData"]["data"])
+                    log.info(f"  ✅ 쇼츠 이미지 생성 완료 ({len(img_bytes)} bytes)")
+                    return img_bytes
+        except Exception as e:
+            wait = 30 * (attempt + 1)
+            log.warning(f"  ⚠️ 이미지 생성 실패 (시도 {attempt+1}/3): {e}")
+            time.sleep(wait)
+
+    raise RuntimeError("쇼츠 이미지 생성 3회 모두 실패")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STEP 3: Gemini TTS로 음성 생성 (Charon - 시원하고 카리스마 있는 남성)
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_voice(script: str) -> bytes:
-    log.info("🎙️  음성 생성 중... (Gemini TTS - Puck)")
+    log.info("🎙️  음성 생성 중... (Gemini TTS - Charon)")
 
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"gemini-2.5-flash-preview-tts:generateContent?key={GEMINI_API_KEY}"
     )
     payload = {
-        "contents": [{
-            "parts": [{"text": script}]
-        }],
+        "contents": [{"parts": [{"text": script}]}],
         "generationConfig": {
             "responseModalities": ["AUDIO"],
             "speechConfig": {
                 "voiceConfig": {
                     "prebuiltVoiceConfig": {
-                        "voiceName": "Puck"
+                        "voiceName": "Charon"
                     }
                 }
             }
@@ -146,20 +184,19 @@ def generate_voice(script: str) -> bytes:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 3: 썸네일 이미지 + 음성 → 쇼츠 영상 합성 (ffmpeg)
+# STEP 4: 이미지 + 음성 → 쇼츠 영상 합성 (ffmpeg)
 # ═════════════════════════════════════════════════════════════════════════════
-def create_shorts_video(image_url: str, audio_bytes: bytes, title: str) -> str:
+def create_shorts_video(image_bytes: bytes, audio_bytes: bytes) -> str:
     log.info("🎬 쇼츠 영상 합성 중... (ffmpeg)")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
 
-        # 이미지 다운로드
+        # 이미지 저장
         img_path = tmpdir / "thumbnail.jpg"
-        img_resp = requests.get(image_url, timeout=30)
-        img_path.write_bytes(img_resp.content)
+        img_path.write_bytes(image_bytes)
 
-        # 음성 저장 (Gemini TTS는 LINEAR16 PCM 포맷으로 반환)
+        # 음성 저장 (Gemini TTS → LINEAR16 PCM)
         audio_raw_path = tmpdir / "voice.raw"
         audio_raw_path.write_bytes(audio_bytes)
 
@@ -167,22 +204,21 @@ def create_shorts_video(image_url: str, audio_bytes: bytes, title: str) -> str:
         audio_path = tmpdir / "voice.wav"
         wav_cmd = [
             "ffmpeg", "-y",
-            "-f", "s16le",       # 16bit signed little-endian PCM
-            "-ar", "24000",      # 샘플레이트 22050Hz (Gemini TTS 기본값)
-            "-ac", "1",          # 모노
+            "-f", "s16le",
+            "-ar", "24000",
+            "-ac", "1",
             "-i", str(audio_raw_path),
             str(audio_path)
         ]
         wav_result = subprocess.run(wav_cmd, capture_output=True, text=True)
         if wav_result.returncode != 0:
-            # raw 변환 실패시 원본 그대로 사용
             audio_path = audio_raw_path
-            log.warning(f"  ⚠️ WAV 변환 실패, 원본 사용: {wav_result.stderr[:200]}")
+            log.warning("  ⚠️ WAV 변환 실패, 원본 사용")
 
-        # 출력 영상 경로
+        # 출력 영상
         output_path = tmpdir / "shorts.mp4"
 
-        # ffmpeg로 이미지 + 음성 합치기 (9:16 쇼츠 비율)
+        # ffmpeg — 9:16 이미지 + 음성 합치기
         cmd = [
             "ffmpeg", "-y",
             "-loop", "1",
@@ -203,9 +239,7 @@ def create_shorts_video(image_url: str, audio_bytes: bytes, title: str) -> str:
         if result.returncode != 0:
             raise RuntimeError(f"ffmpeg 실패: {result.stderr}")
 
-        # 최종 파일을 /tmp에 복사
         final_path = f"/tmp/shorts_{int(time.time())}.mp4"
-        import shutil
         shutil.copy(str(output_path), final_path)
 
         log.info(f"  ✅ 영상 합성 완료: {final_path}")
@@ -213,7 +247,7 @@ def create_shorts_video(image_url: str, audio_bytes: bytes, title: str) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 4: 유튜브 업로드 (ausbro80 계정)
+# STEP 5: 유튜브 업로드
 # ═════════════════════════════════════════════════════════════════════════════
 def upload_to_youtube(video_path: str, shorts_meta: dict) -> str:
     log.info("📤 유튜브 업로드 중...")
@@ -234,7 +268,7 @@ def upload_to_youtube(video_path: str, shorts_meta: dict) -> str:
             "title": shorts_meta["youtube_title"],
             "description": shorts_meta["youtube_description"],
             "tags": shorts_meta.get("tags", []) + ["바이브코딩", "Shorts", "AI코딩"],
-            "categoryId": "28",  # Science & Technology
+            "categoryId": "28",
             "defaultLanguage": "ko",
         },
         "status": {
@@ -247,7 +281,7 @@ def upload_to_youtube(video_path: str, shorts_meta: dict) -> str:
         video_path,
         mimetype="video/mp4",
         resumable=True,
-        chunksize=1024 * 1024  # 1MB 청크
+        chunksize=1024 * 1024
     )
 
     request = youtube.videos().insert(
@@ -266,34 +300,34 @@ def upload_to_youtube(video_path: str, shorts_meta: dict) -> str:
     youtube_url = f"https://www.youtube.com/shorts/{video_id}"
     log.info(f"  ✅ 유튜브 업로드 완료: {youtube_url}")
 
-    # 임시 파일 삭제
     os.remove(video_path)
-
     return youtube_url
 
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 메인 함수 — main.py에서 호출
 # ═════════════════════════════════════════════════════════════════════════════
-def post_youtube_shorts(title: str, content_html: str, image_url: str, blog_url: str) -> str:
+def post_youtube_shorts(title: str, content_html: str, blog_url: str) -> str:
     """
     블로그 포스팅 완료 후 호출.
-    title       : 블로그 제목
-    content_html: 블로그 본문 HTML
-    image_url   : 썸네일 이미지 URL (imgur)
-    blog_url    : 블로그 포스트 URL
+    title        : 블로그 제목
+    content_html : 블로그 본문 HTML
+    blog_url     : 블로그 포스트 URL
     """
     try:
-        # 1. 스크립트 생성
+        # 1. 스크립트 + 메타데이터 생성
         shorts_meta = generate_shorts_script(title, content_html, blog_url)
 
-        # 2. 음성 생성
+        # 2. 쇼츠용 9:16 이미지 생성
+        image_bytes = generate_shorts_image(title)
+
+        # 3. 음성 생성 (Charon)
         audio_bytes = generate_voice(shorts_meta["script"])
 
-        # 3. 영상 합성
-        video_path = create_shorts_video(image_url, audio_bytes, title)
+        # 4. 영상 합성
+        video_path = create_shorts_video(image_bytes, audio_bytes)
 
-        # 4. 유튜브 업로드
+        # 5. 유튜브 업로드
         youtube_url = upload_to_youtube(video_path, shorts_meta)
 
         return youtube_url
