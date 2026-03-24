@@ -341,8 +341,25 @@ Length: 1,000~1,500 words
   "meta_description": "Google-optimized meta description under 155 characters",
   "tags": ["tag1", "tag2", "tag3"],
   "slug": "seo-english-slug-{year}",
-  "content_html": "Complete HTML post body (use h2 h3 p ul li strong)"
+  "content_html": "Complete HTML post body — apply style guide below"
 }}
+
+## HTML Style Guide (must apply to content_html)
+Brand color: #0D9488 (Teal) — AI Tools & Productivity Guide theme
+
+1. Key summary box (required, place at top):
+<div style="background:#F0FDFA;border-left:4px solid #0D9488;border-radius:0 8px 8px 0;padding:16px 20px;margin:24px 0"><p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#0F766E">💡 Key Takeaway</p><p style="margin:0;font-size:14px;color:#115E59;line-height:1.7">Summary here</p></div>
+
+2. Numbered cards (for step-by-step, use 3~5):
+<div style="background:#fff;border:1px solid #CCFBF1;border-radius:12px;padding:16px;display:flex;gap:16px;align-items:flex-start;margin-bottom:12px"><div style="background:#0D9488;color:#fff;font-size:14px;font-weight:700;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0">1</div><div><p style="margin:0 0 6px;font-size:15px;font-weight:700;color:#134E4A">Title</p><p style="margin:0;font-size:14px;color:#4B5563;line-height:1.6">Content</p></div></div>
+
+3. Warning/tip box:
+<div style="background:#F0FDFA;border-radius:12px;padding:16px 20px;margin:20px 0"><p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#0D9488">⚠️ Note</p><p style="margin:0;font-size:14px;color:#0F766E;line-height:1.6">Content. Highlight keywords like <mark style="background:#99F6E4;color:#0F766E;padding:2px 6px;border-radius:4px">this</mark></p></div>
+
+4. Section h2 style:
+<h2 style="font-size:18px;font-weight:700;color:#134E4A;margin:32px 0 16px;padding-bottom:8px;border-bottom:2px solid #0D9488">Section Title</h2>
+
+Rules: Every section must use at least one style above. No plain text blocks. Highlight key terms with mark tags.
 """
     post_data = call_claude(prompt)
     log.info("  ✅ Blog post generated")
