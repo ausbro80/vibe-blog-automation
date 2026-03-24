@@ -13,22 +13,25 @@ import json
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 
-# Blogger API 읽기/쓰기 권한
-SCOPES = ["https://www.googleapis.com/auth/blogger"]
+# Blogger + YouTube 업로드 권한
+SCOPES = [
+    "https://www.googleapis.com/auth/blogger",
+    "https://www.googleapis.com/auth/youtube.upload",
+]
 
 def main():
     print("=" * 55)
-    print("  Google Blogger OAuth 인증 설정")
+    print("  Google Blogger + YouTube OAuth 인증 설정")
     print("=" * 55)
     print()
     print("📋 사전 준비:")
     print("  1. https://console.cloud.google.com 접속")
-    print("  2. 새 프로젝트 생성 (또는 기존 프로젝트 선택)")
-    print("  3. 'Blogger API v3' 활성화")
-    print("  4. 사용자 인증 정보 > OAuth 2.0 클라이언트 ID 생성")
-    print("     - 유형: 데스크톱 앱")
-    print("  5. JSON 파일 다운로드 → 이 스크립트와 같은 폴더에")
-    print("     'client_secret.json' 으로 저장")
+    print("  2. 기존 프로젝트 선택 (Blogger 만들 때 쓴 프로젝트)")
+    print("  3. 'YouTube Data API v3' 활성화")
+    print("     (Blogger API는 이미 활성화되어 있음)")
+    print("  4. 기존 client_secret.json 그대로 사용 가능")
+    print()
+    print("⚠️  브라우저에서 인증 시 업로드할 유튜브 채널 계정으로 로그인!")
     print()
 
     client_secret_file = input("client_secret.json 파일 경로 (엔터 = 현재 폴더): ").strip()
@@ -52,11 +55,12 @@ def main():
     })
 
     print()
-    print("✅ 인증 완료!")
+    print("✅ 인증 완료! (Blogger + YouTube 권한 포함)")
     print()
     print("━" * 55)
     print("📋 아래 JSON을 복사해서 GitHub Secrets에 등록하세요")
     print("   Secret 이름: GOOGLE_CREDENTIALS_JSON")
+    print("   (기존 값 덮어쓰기)")
     print("━" * 55)
     print(credentials_json)
     print("━" * 55)
