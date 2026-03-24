@@ -460,7 +460,7 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 
 완성된 HTML 본문만 출력해줘. JSON 형식 금지, 마크다운 코드블록 금지, HTML 태그만 바로 출력.
 """
-    content_html = call_claude_raw(html_prompt, max_tokens=8000)
+    content_html = call_claude_raw(html_prompt, max_tokens=4000)
 
     if content_html.startswith("```"):
         lines = content_html.split("\n")
@@ -640,24 +640,11 @@ def main():
         # ✅ 블로그 포스팅
         blog_url = post_to_blogger(best_title, post_data, image_url)
 
-        # ✅ 유튜브 쇼츠 자동 업로드
-        try:
-            from youtube_shorts import post_youtube_shorts
-            youtube_url = post_youtube_shorts(
-                title=best_title,
-                content_html=post_data["content_html"],
-                image_url=image_url,
-                blog_url=blog_url,
-            )
-            if youtube_url:
-                log.info(f"  🎬 유튜브 쇼츠 완료: {youtube_url}")
-        except Exception as e:
-            log.warning(f"  ⚠️ 유튜브 쇼츠 실패 (블로그는 정상): {e}")
-
-        # ✅ 인스타그램 포스팅
+        # ✅ 인스타그램 포스팅 (카드 이미지 URL 받아오기)
+        card_image_urls = []
         try:
             from instagram import post_instagram
-            insta_url = post_instagram(
+            insta_url, card_image_urls = post_instagram(
                 blog_title=best_title,
                 blog_content_html=post_data["content_html"],
                 tags=post_data.get("tags", []),
@@ -665,6 +652,20 @@ def main():
             log.info(f"  📸 인스타 포스팅 완료: {insta_url}")
         except Exception as e:
             log.warning(f"  ⚠️ 인스타 포스팅 실패 (블로그는 정상): {e}")
+
+        # ✅ 유튜브 쇼츠 (인스타 카드 이미지 활용)
+        try:
+            from youtube_shorts import post_youtube_shorts
+            youtube_url = post_youtube_shorts(
+                title=best_title,
+                content_html=post_data["content_html"],
+                blog_url=blog_url,
+                card_image_urls=card_image_urls,
+            )
+            if youtube_url:
+                log.info(f"  🎬 유튜브 쇼츠 완료: {youtube_url}")
+        except Exception as e:
+            log.warning(f"  ⚠️ 유튜브 쇼츠 실패 (블로그는 정상): {e}")
 
         log.info("=" * 60)
         log.info("🎉 전체 파이프라인 완료!")
