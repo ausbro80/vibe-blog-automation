@@ -45,7 +45,8 @@ OUTRO_SCRIPT = "자세한 내용은 설명란 링크에서 확인하세요! 구�
 
 W, H = 1080, 1920  # 쇼츠 사이즈
 CARD_SIZE = 1080    # 카드 정방형 사이즈
-LOGO_PATH = os.path.join(os.path.dirname(__file__), "logo.png")
+LOGO_PATH  = os.path.join(os.path.dirname(__file__), "logo.png")   # 아웃트로용
+LOGO_PATH2 = os.path.join(os.path.dirname(__file__), "logo2.png")  # 인트로용
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -209,16 +210,17 @@ def make_intro_frame() -> bytes:
         b = int(60 + (120 - 60) * t)
         draw.line([(0, y), (W, y)], fill=(r, g, b))
 
-    # 로고 삽입
-    if os.path.exists(LOGO_PATH):
+    # 인트로 로고 (logo2.png)
+    logo_file = LOGO_PATH2 if os.path.exists(LOGO_PATH2) else LOGO_PATH
+    if os.path.exists(logo_file):
         try:
-            logo = Image.open(LOGO_PATH).convert("RGBA")
-            logo_w = 700
+            logo = Image.open(logo_file).convert("RGBA")
+            logo_w = 800
             ratio = logo_w / logo.width
             logo_h = int(logo.height * ratio)
             logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
             x = (W - logo_w) // 2
-            y = (H - logo_h) // 2 - 100
+            y = (H - logo_h) // 2 - 80
             img.paste(logo, (x, y), logo)
         except Exception as e:
             log.warning(f"  ⚠️ 로고 삽입 실패: {e}")
@@ -232,46 +234,71 @@ def make_intro_frame() -> bytes:
 # STEP 4: 카드 프레임 생성 (1080x1920 - 카드 중앙 + 하단 자막 영역)
 # ═════════════════════════════════════════════════════════════════════════════
 def make_card_frame(card_image_bytes: bytes, subtitle: str) -> bytes:
-    """카드 이미지를 1080x1920 프레임에 배치 + 하단 자막 영역"""
+    """카드 이미지를 1080x1920 프레임에 배치 + 상단 로고 + 하단 자막"""
 
-    # 배경
-    frame = Image.new("RGB", (W, H), color=(10, 10, 20))
+    # 배경 (짙은 다크)
+    frame = Image.new("RGB", (W, H), color=(8, 8, 16))
     draw = ImageDraw.Draw(frame)
 
-    # 배경 그라데이션
-    for y in range(H):
-        t = y / H
-        r = int(20 + (60 - 20) * t)
-        g = int(0 + (10 - 0) * t)
-        b = int(40 + (80 - 40) * t)
-        draw.line([(0, y), (W, y)], fill=(r, g, b))
+    # 상단 영역 높이
+    TOP_H = 160
+    # 카드 영역
+    CARD_Y = TOP_H
+    # 하단 자막 영역
+    SUBTITLE_H = 220
 
-    # 카드 이미지 (1080x1080) 중앙 상단 배치
+    # 상단 바 (반투명 보라)
+    top_overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    top_draw = ImageDraw.Draw(top_overlay)
+    top_draw.rectangle([0, 0, W, TOP_H], fill=(108, 58, 237, 220))
+    frame = Image.alpha_composite(frame.convert("RGBA"), top_overlay).convert("RGB")
+    draw = ImageDraw.Draw(frame)
+
+    # 상단 로고 (작게)
+    if os.path.exists(LOGO_PATH):
+        try:
+            logo = Image.open(LOGO_PATH).convert("RGBA")
+            logo_h = 100
+            ratio = logo_h / logo.height
+            logo_w = int(logo.width * ratio)
+            logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
+            lx = (W - logo_w) // 2
+            ly = (TOP_H - logo_h) // 2
+            frame.paste(logo, (lx, ly), logo)
+        except Exception as e:
+            # 로고 없으면 텍스트로
+            font_brand = load_font(48, bold=True)
+            draw.text((W//2, TOP_H//2), "바이브코딩 스쿨", font=font_brand, fill=(255,255,255), anchor="mm")
+
+    draw = ImageDraw.Draw(frame)
+
+    # 카드 이미지 (중앙)
+    card_area_h = H - TOP_H - SUBTITLE_H
     try:
-        from PIL import UnidentifiedImageError
         bio = BytesIO(bytes(card_image_bytes))
         bio.seek(0)
         card = Image.open(bio)
         card.load()
         card = card.convert("RGB")
-        card = card.resize((CARD_SIZE, CARD_SIZE), Image.LANCZOS)
-        card_y = (H - CARD_SIZE) // 2 - 80  # 살짝 위로
-        frame.paste(card, (0, card_y))
+        # 카드 영역에 맞게 리사이즈
+        card_size = min(W, card_area_h)
+        card = card.resize((card_size, card_size), Image.LANCZOS)
+        cx = (W - card_size) // 2
+        cy = CARD_Y + (card_area_h - card_size) // 2
+        frame.paste(card, (cx, cy))
     except Exception as e:
         log.warning(f"  ⚠️ 카드 이미지 삽입 실패: {e}")
 
-    # 하단 자막 영역 (반투명 검정 배경)
-    subtitle_bg_y = H - 280
-    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    overlay_draw = ImageDraw.Draw(overlay)
-    overlay_draw.rectangle([0, subtitle_bg_y, W, H], fill=(0, 0, 0, 180))
-    frame = Image.alpha_composite(frame.convert("RGBA"), overlay).convert("RGB")
+    # 하단 자막 영역
+    subtitle_bg_y = H - SUBTITLE_H
+    sub_overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sub_draw = ImageDraw.Draw(sub_overlay)
+    sub_draw.rectangle([0, subtitle_bg_y, W, H], fill=(0, 0, 0, 200))
+    frame = Image.alpha_composite(frame.convert("RGBA"), sub_overlay).convert("RGB")
+    draw = ImageDraw.Draw(frame)
 
     # 자막 텍스트
-    draw = ImageDraw.Draw(frame)
-    font = load_font(52, bold=True)
-
-    # 텍스트 줄바꿈
+    font = load_font(50, bold=True)
     max_width = W - 80
     words = subtitle.split()
     lines, current = [], ""
@@ -286,21 +313,53 @@ def make_card_frame(card_image_bytes: bytes, subtitle: str) -> bytes:
     if current:
         lines.append(current)
 
-    # 자막 그리기
-    y = subtitle_bg_y + 40
-    for line in lines[:3]:  # 최대 3줄
+    # 자막 중앙 정렬
+    total_h = sum([draw.textbbox((0,0), l, font=font)[3] + 10 for l in lines[:3]])
+    y = subtitle_bg_y + (SUBTITLE_H - total_h) // 2
+    for line in lines[:3]:
         bbox = draw.textbbox((0, 0), line, font=font)
         x = (W - (bbox[2] - bbox[0])) // 2
-        # 외곽선
-        for dx, dy in [(-2, -2), (2, -2), (-2, 2), (2, 2)]:
-            draw.text((x + dx, y + dy), line, font=font, fill=(0, 0, 0))
-        # 메인 텍스트
-        draw.text((x, y), line, font=font, fill=(255, 255, 255))
-        y += bbox[3] - bbox[1] + 12
+        for dx, dy in [(-2,-2),(2,-2),(-2,2),(2,2)]:
+            draw.text((x+dx, y+dy), line, font=font, fill=(0,0,0))
+        draw.text((x, y), line, font=font, fill=(255, 255, 0))  # 노란색 자막
+        y += bbox[3] - bbox[1] + 10
 
     buf = BytesIO()
     frame.save(buf, format="PNG")
     return buf.getvalue()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 음성 길이 측정
+# ═════════════════════════════════════════════════════════════════════════════
+def get_audio_duration(audio_path: Path) -> float:
+    result = subprocess.run([
+        "ffprobe", "-v", "quiet",
+        "-show_entries", "format=duration",
+        "-of", "csv=p=0",
+        str(audio_path)
+    ], capture_output=True, text=True)
+    try:
+        return float(result.stdout.strip())
+    except:
+        return 5.0
+
+
+def make_video_segment(img_path: Path, audio_path: Path, output_path: Path):
+    """이미지 + 음성 → 영상 (음성 길이에 정확히 맞춤)"""
+    duration = get_audio_duration(audio_path) + 0.3
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-loop", "1", "-i", str(img_path),
+        "-i", str(audio_path),
+        "-c:v", "libx264", "-tune", "stillimage",
+        "-c:a", "aac", "-b:a", "192k",
+        "-t", str(duration),
+        "-vf", f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black",
+        "-pix_fmt", "yuv420p",
+        str(output_path)
+    ], capture_output=True)
+    log.info(f"    ⏱️ 영상 길이: {duration:.1f}초")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -327,16 +386,7 @@ def create_shorts_video(
         intro_audio_path = save_voice_as_wav(intro_audio_bytes, tmpdir / "intro_audio.wav")
 
         intro_video = tmpdir / "intro.mp4"
-        subprocess.run([
-            "ffmpeg", "-y",
-            "-loop", "1", "-i", str(intro_img_path),
-            "-i", str(intro_audio_path),
-            "-c:v", "libx264", "-tune", "stillimage",
-            "-c:a", "aac", "-b:a", "192k",
-            "-vf", f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black",
-            "-shortest", "-pix_fmt", "yuv420p",
-            str(intro_video)
-        ], capture_output=True)
+        make_video_segment(intro_img_path, intro_audio_path, intro_video)
         segments.append(intro_video)
 
         # ── 카드 세그먼트들 ──
@@ -357,16 +407,7 @@ def create_shorts_video(
             card_audio_path = save_voice_as_wav(card_audio_bytes, tmpdir / f"card_{i}_audio.wav")
 
             card_video = tmpdir / f"card_{i}.mp4"
-            subprocess.run([
-                "ffmpeg", "-y",
-                "-loop", "1", "-i", str(card_img_path),
-                "-i", str(card_audio_path),
-                "-c:v", "libx264", "-tune", "stillimage",
-                "-c:a", "aac", "-b:a", "192k",
-                "-vf", f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black",
-                "-shortest", "-pix_fmt", "yuv420p",
-                str(card_video)
-            ], capture_output=True)
+            make_video_segment(card_img_path, card_audio_path, card_video)
             segments.append(card_video)
 
         # ── 아웃트로 세그먼트 ──
@@ -379,16 +420,7 @@ def create_shorts_video(
         outro_audio_path = save_voice_as_wav(outro_audio_bytes, tmpdir / "outro_audio.wav")
 
         outro_video = tmpdir / "outro.mp4"
-        subprocess.run([
-            "ffmpeg", "-y",
-            "-loop", "1", "-i", str(outro_img_path),
-            "-i", str(outro_audio_path),
-            "-c:v", "libx264", "-tune", "stillimage",
-            "-c:a", "aac", "-b:a", "192k",
-            "-vf", f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black",
-            "-shortest", "-pix_fmt", "yuv420p",
-            str(outro_video)
-        ], capture_output=True)
+        make_video_segment(outro_img_path, outro_audio_path, outro_video)
         segments.append(outro_video)
 
         # ── 세그먼트 합치기 ──
