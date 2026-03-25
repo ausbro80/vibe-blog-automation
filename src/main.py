@@ -84,7 +84,7 @@ def search(query: str, max_tokens: int = 2000) -> str:
     return ""
 
 
-def call_claude(prompt: str, max_tokens: int = 6000) -> dict:
+def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
     """메타데이터 전용 — JSON 파싱 (HTML 포함 금지)"""
     for attempt in range(3):
         try:
@@ -110,7 +110,7 @@ def call_claude(prompt: str, max_tokens: int = 6000) -> dict:
     raise RuntimeError("Claude API 호출 3회 모두 실패")
 
 
-def call_claude_raw(prompt: str, max_tokens: int = 6000) -> str:
+def call_claude_raw(prompt: str, max_tokens: int = 4000) -> str:
     """HTML 본문 전용 — JSON 파싱 없이 텍스트 그대로 반환"""
     for attempt in range(3):
         try:
@@ -326,6 +326,15 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 - "vibe coding이란?", "AI 코딩이란?" 같은 기초 설명으로 글 시작 금지
 - 수집된 정보를 단순 요약하지 말고, 한국 독자(직장인/취준생/소상공인) 관점의 인사이트와 의견을 반드시 추가할 것
 
+## 사실 확인 원칙 (반드시 준수)
+- 수집된 정보에 명시된 수치/통계/사실만 사용할 것
+- 수집된 정보에 없는 내용 절대 창작/추측 금지
+- 수치나 통계 인용 시 논리적 일관성 반드시 확인할 것
+  예) "90%가 월 360달러 이하 사용" → 200달러보다 높으므로 "200달러면 충분"은 잘못된 해석
+- 불확실하거나 출처 불명확한 수치는 "~라고 알려져 있어요" 등 완화 표현 사용
+- 상충되는 정보가 있을 경우 양쪽 시각 모두 제시할 것
+- 독자가 잘못된 판단을 내리게 만드는 오해 유발 표현 절대 금지
+
 ## SEO 제목 규칙 (반드시 준수)
 - 형식: [핵심 키워드] + [구체적 방법/결과] + [대상 또는 연도]
 - 핵심 키워드를 제목 앞부분에 배치
@@ -460,7 +469,7 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 
 완성된 HTML 본문만 출력해줘. JSON 형식 금지, 마크다운 코드블록 금지, HTML 태그만 바로 출력.
 """
-    content_html = call_claude_raw(html_prompt, max_tokens=6000)
+    content_html = call_claude_raw(html_prompt, max_tokens=4000)
 
     if content_html.startswith("```"):
         lines = content_html.split("\n")
