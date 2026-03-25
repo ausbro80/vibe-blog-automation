@@ -43,8 +43,8 @@ CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
 
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-INTRO_SCRIPT = "안녕하세요, 바이브코딩스쿨입니다! 오늘도 좋은 정보 빠르게 가져왔으니 30초만 집중하세요!"
-OUTRO_SCRIPT = "자세한 내용은 설명란 링크에서 확인하세요! 구독하고 매일 AI 최신 정보 받아보세요!"
+INTRO_SCRIPT = "안녕하세요 바이브코딩스쿨이에요. 빠르게 30초만 집중하세요!"
+OUTRO_SCRIPT = "더 자세한 내용은 설명란 링크에서 확인하세요. 구독하면 매일 이런 정보 받을 수 있어요!"
 
 W, H = 1080, 1920
 LOGO_PATH  = os.path.join(os.path.dirname(__file__), "logo.png")
@@ -111,19 +111,28 @@ def generate_card_scripts(title: str, content_html: str, blog_url: str, num_card
 {text}
 
 ## 카드 구성 원칙
-- 카드 1: 강한 훅 — 숫자/통계/반전으로 첫 3초 집중시키기
-  예) "기업 63%가 이미 AI 코딩 도구 쓰고 있어요"
+- 카드 1 (훅): 영상 첫 3초가 전부예요. 아래 중 하나로 시작하세요.
+  충격 수치 예) 월 20달러 AI가 갑자기 200달러가 됐어요
+  반전 질문 예) 이거 모르면 AI 비용 10배 더 내고 있어요
+  직접 호명 예) AI 쓰는 직장인이라면 꼭 보세요
+  절대 인사말로 시작 금지! 바로 핵심 정보로 시작하세요.
 - 카드 2~4: 블로그 핵심 내용에서 가장 임팩트 있는 정보 3가지
   - 구체적인 수치, 실제 사례, 실용적인 팁 위주로
-  - 단순 요약 금지, 독자가 "오 이거 몰랐다" 할 내용으로
-- 카드 5: 핵심 요약 한 줄 + 블로그 유도
+  - 단순 요약 금지, 독자가 오 이거 몰랐다 할 내용으로
+- 카드 5: 핵심 요약 한 줄 + 설명란 링크에서 더 보세요 유도
 
 ## 나레이션 원칙
 - 반드시 2026년 기준으로 작성 (2024년, 2025년 언급 금지)
+- 카드 1은 인사말 절대 금지, 핵심 정보로 바로 시작
 - 각 카드 나레이션은 3~4초 분량 (50~70자)
 - 친근하고 빠릿한 말투 (~해요, ~거예요)
 - 정보가 구체적이고 실용적이어야 함
-- 단순히 "중요해요" 같은 말 금지
+- 블로그에 명시된 수치만 사용, 없는 내용 창작 금지
+- 말하듯이 자연스럽게 써주세요. 문어체 금지!
+  나쁜 예) Claude Max는 기존 Pro 대비 5~20배 사용량을 제공합니다
+  좋은 예) Claude Max 쓰면 Pro보다 최대 20배 더 쓸 수 있어요
+- 짧고 끊어서 써주세요. 한 문장에 정보 하나만!
+- 감탄사 활용: "진짜예요", "대박이죠?", "놀랍지 않나요?" 자연스럽게
 
 ## 이미지 프롬프트 원칙
 - 각 카드 내용을 시각적으로 표현하는 장면
@@ -379,8 +388,11 @@ def generate_voice(script: str) -> bytes:
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"gemini-2.5-flash-preview-tts:generateContent?key={GEMINI_API_KEY}"
     )
+    # 자연스러운 말투로 읽도록 스타일 지시 추가
+    styled_script = f"다음 내용을 친근하고 자연스러운 말투로 읽어주세요. 너무 딱딱하지 않게, 대화하듯이 읽어주세요:\n\n{script}"
+
     payload = {
-        "contents": [{"parts": [{"text": script}]}],
+        "contents": [{"parts": [{"text": styled_script}]}],
         "generationConfig": {
             "responseModalities": ["AUDIO"],
             "speechConfig": {
