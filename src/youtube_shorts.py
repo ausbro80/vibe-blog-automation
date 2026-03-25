@@ -576,10 +576,10 @@ def upload_to_instagram_reels(video_url: str, title: str, blog_url: str) -> str:
         return ""
 
     base = "https://graph.instagram.com/v25.0"
-    caption = f"{title}
+    caption = title + "
 
 📌 더 자세한 내용은 블로그에서!
-🔗 {blog_url}
+🔗 " + blog_url + "
 
 #바이브코딩 #AI코딩 #Shorts #바이브코딩스쿨 #AI자동화"
 
