@@ -34,7 +34,12 @@ log = logging.getLogger(__name__)
 
 ANTHROPIC_API_KEY  = os.environ["ANTHROPIC_API_KEY"]
 GEMINI_API_KEY     = os.environ["GEMINI_API_KEY"]
-GOOGLE_CREDENTIALS = os.environ["GOOGLE_CREDENTIALS_JSON"]
+GOOGLE_CREDENTIALS    = os.environ["GOOGLE_CREDENTIALS_JSON"]
+INSTAGRAM_TOKEN       = os.environ.get("INSTAGRAM_ACCESS_TOKEN", "")
+INSTAGRAM_ACCOUNT_ID  = os.environ.get("INSTAGRAM_ACCOUNT_ID", "")
+CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
+CLOUDINARY_API_KEY    = os.environ.get("CLOUDINARY_API_KEY", "")
+CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
 
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
@@ -527,6 +532,105 @@ def create_shorts_video(card_scripts: list, title: str) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# STEP 7-1: Cloudinary에 영상 업로드 (인스타 릴스용 공개 URL 필요)
+# ═════════════════════════════════════════════════════════════════════════════
+def upload_video_to_cloudinary(video_path: str) -> str:
+    log.info("☁️  Cloudinary 영상 업로드 중...")
+    import hashlib
+
+    timestamp = str(int(time.time()))
+    public_id = f"vibe_school/reels_{timestamp}"
+    params_to_sign = f"public_id={public_id}&resource_type=video&timestamp={timestamp}"
+    signature = hashlib.sha1(
+        (params_to_sign + CLOUDINARY_API_SECRET).encode()
+    ).hexdigest()
+
+    with open(video_path, "rb") as f:
+        resp = requests.post(
+            f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD_NAME}/video/upload",
+            data={
+                "public_id": public_id,
+                "timestamp": timestamp,
+                "api_key": CLOUDINARY_API_KEY,
+                "signature": signature,
+                "resource_type": "video",
+            },
+            files={"file": f},
+            timeout=120,
+        )
+
+    resp.raise_for_status()
+    url = resp.json().get("secure_url", "")
+    log.info(f"  ✅ Cloudinary 영상 업로드 완료: {url[:60]}...")
+    return url
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STEP 7-2: 인스타그램 릴스 업로드
+# ═════════════════════════════════════════════════════════════════════════════
+def upload_to_instagram_reels(video_url: str, title: str, blog_url: str) -> str:
+    log.info("📱 인스타그램 릴스 업로드 중...")
+
+    if not INSTAGRAM_TOKEN or not INSTAGRAM_ACCOUNT_ID:
+        log.warning("  ⚠️ 인스타그램 토큰/계정 없음 → 릴스 스킵")
+        return ""
+
+    base = "https://graph.instagram.com/v25.0"
+    caption = f"{title}
+
+📌 더 자세한 내용은 블로그에서!
+🔗 {blog_url}
+
+#바이브코딩 #AI코딩 #Shorts #바이브코딩스쿨 #AI자동화"
+
+    # 1. 미디어 컨테이너 생성
+    for attempt in range(3):
+        resp = requests.post(
+            f"{base}/{INSTAGRAM_ACCOUNT_ID}/media",
+            json={
+                "media_type": "REELS",
+                "video_url": video_url,
+                "caption": caption,
+                "share_to_feed": True,
+                "access_token": INSTAGRAM_TOKEN,
+            },
+            timeout=30,
+        )
+        if resp.ok:
+            break
+        log.warning(f"  ⚠️ 릴스 컨테이너 생성 실패 (시도 {attempt+1}/3): {resp.text[:100]}")
+        time.sleep(30)
+    resp.raise_for_status()
+    container_id = resp.json()["id"]
+    log.info(f"  📦 릴스 컨테이너 생성 완료: {container_id}")
+
+    # 2. 처리 대기 (인스타가 영상 처리하는 시간)
+    log.info("  ⏳ 인스타 영상 처리 대기 중... (30초)")
+    time.sleep(30)
+
+    # 3. 게시
+    for attempt in range(3):
+        resp = requests.post(
+            f"{base}/{INSTAGRAM_ACCOUNT_ID}/media_publish",
+            json={
+                "creation_id": container_id,
+                "access_token": INSTAGRAM_TOKEN,
+            },
+            timeout=30,
+        )
+        if resp.ok:
+            break
+        log.warning(f"  ⚠️ 릴스 게시 실패 (시도 {attempt+1}/3): {resp.text[:100]}")
+        time.sleep(30)
+    resp.raise_for_status()
+
+    post_id = resp.json()["id"]
+    reels_url = f"https://www.instagram.com/reel/{post_id}/"
+    log.info(f"  ✅ 인스타 릴스 업로드 완료: {reels_url}")
+    return reels_url
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # STEP 7: 유튜브 업로드
 # ═════════════════════════════════════════════════════════════════════════════
 def upload_to_youtube(video_path: str, meta: dict) -> str:
@@ -597,8 +701,21 @@ def post_youtube_shorts(
         # 2. 영상 합성
         video_path = create_shorts_video(card_scripts, title)
 
-        # 3. 유튜브 업로드
+        # 3. Cloudinary 업로드 (인스타 릴스용)
+        reels_url = ""
+        try:
+            video_public_url = upload_video_to_cloudinary(video_path)
+
+            # 4. 인스타 릴스 업로드
+            reels_url = upload_to_instagram_reels(video_public_url, title, blog_url)
+        except Exception as e:
+            log.warning(f"  ⚠️ 인스타 릴스 실패 (유튜브는 정상): {e}")
+
+        # 5. 유튜브 업로드
         youtube_url = upload_to_youtube(video_path, meta)
+
+        if reels_url:
+            log.info(f"  📱 인스타 릴스: {reels_url}")
 
         return youtube_url
 
