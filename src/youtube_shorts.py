@@ -576,12 +576,7 @@ def upload_to_instagram_reels(video_url: str, title: str, blog_url: str) -> str:
         return ""
 
     base = "https://graph.instagram.com/v25.0"
-    caption = title + "
-
-📌 더 자세한 내용은 블로그에서!
-🔗 " + blog_url + "
-
-#바이브코딩 #AI코딩 #Shorts #바이브코딩스쿨 #AI자동화"
+    caption = title + "\n\n블로그에서 더 보기: " + blog_url + "\n\n#바이브코딩 #AI코딩 #Shorts #바이브코딩스쿨"
 
     # 1. 미디어 컨테이너 생성
     for attempt in range(3):
