@@ -237,9 +237,12 @@ def make_card_frame(card_image_bytes: bytes, subtitle: str) -> bytes:
 
     # 카드 이미지 (1080x1080) 중앙 상단 배치
     try:
-        bio = BytesIO(card_image_bytes)
+        from PIL import UnidentifiedImageError
+        bio = BytesIO(bytes(card_image_bytes))
         bio.seek(0)
-        card = Image.open(bio).convert("RGB")
+        card = Image.open(bio)
+        card.load()
+        card = card.convert("RGB")
         card = card.resize((CARD_SIZE, CARD_SIZE), Image.LANCZOS)
         card_y = (H - CARD_SIZE) // 2 - 80  # 살짝 위로
         frame.paste(card, (0, card_y))
@@ -330,8 +333,10 @@ def create_shorts_video(
             log.info(f"  🎬 카드 {i+1} 세그먼트 생성 중...")
 
             # 카드 이미지 다운로드
-            card_resp = requests.get(card_url, timeout=30)
-            card_frame_bytes = make_card_frame(card_resp.content, script_data.get("script", ""))
+            card_resp = requests.get(card_url, timeout=30, headers={"Accept": "image/png,image/*"})
+            bio = BytesIO(card_resp.content)
+            bio.seek(0)
+            card_frame_bytes = make_card_frame(bio.read(), script_data.get("script", ""))
 
             card_img_path = tmpdir / f"card_{i}.png"
             card_img_path.write_bytes(card_frame_bytes)
