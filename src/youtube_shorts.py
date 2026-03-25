@@ -539,26 +539,29 @@ def upload_video_to_cloudinary(video_path: str) -> str:
     import hashlib
 
     timestamp = str(int(time.time()))
-    public_id = f"vibe_school/reels_{timestamp}"
-    params_to_sign = f"public_id={public_id}&resource_type=video&timestamp={timestamp}"
+    public_id = "vibe_school/reels_" + timestamp
+
+    # 서명 생성 (파라미터 알파벳 순서 중요)
+    params_to_sign = "public_id=" + public_id + "&timestamp=" + timestamp
     signature = hashlib.sha1(
-        (params_to_sign + CLOUDINARY_API_SECRET).encode()
+        (params_to_sign + CLOUDINARY_API_SECRET).encode("utf-8")
     ).hexdigest()
 
     with open(video_path, "rb") as f:
         resp = requests.post(
-            f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD_NAME}/video/upload",
+            "https://api.cloudinary.com/v1_1/" + CLOUDINARY_CLOUD_NAME + "/video/upload",
             data={
                 "public_id": public_id,
                 "timestamp": timestamp,
                 "api_key": CLOUDINARY_API_KEY,
                 "signature": signature,
-                "resource_type": "video",
             },
-            files={"file": f},
-            timeout=120,
+            files={"file": ("video.mp4", f, "video/mp4")},
+            timeout=180,
         )
 
+    if not resp.ok:
+        log.warning(f"  ⚠️ Cloudinary 응답: {resp.text[:200]}")
     resp.raise_for_status()
     url = resp.json().get("secure_url", "")
     log.info(f"  ✅ Cloudinary 영상 업로드 완료: {url[:60]}...")
