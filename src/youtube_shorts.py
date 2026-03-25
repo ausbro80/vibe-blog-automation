@@ -106,6 +106,7 @@ def generate_card_scripts(title: str, content_html: str, blog_url: str, num_card
             "content": f"""아래 블로그 글을 유튜브 쇼츠용 카드 {num_cards}장으로 만들어줘.
 
 블로그 제목: {title}
+작성 날짜: 2026년 (반드시 2026년 기준으로 작성)
 블로그 본문:
 {text}
 
@@ -118,6 +119,7 @@ def generate_card_scripts(title: str, content_html: str, blog_url: str, num_card
 - 카드 5: 핵심 요약 한 줄 + 블로그 유도
 
 ## 나레이션 원칙
+- 반드시 2026년 기준으로 작성 (2024년, 2025년 언급 금지)
 - 각 카드 나레이션은 3~4초 분량 (50~70자)
 - 친근하고 빠릿한 말투 (~해요, ~거예요)
 - 정보가 구체적이고 실용적이어야 함
