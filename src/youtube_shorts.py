@@ -59,12 +59,23 @@ def get_font_path(bold: bool = False) -> str:
         "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Regular.otf",
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc" if bold else
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc" if bold else
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc" if bold else
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
     for path in candidates:
         if os.path.exists(path):
             return path
+    # 폰트 못 찾으면 전체 검색
+    import glob
+    patterns = ["*Bold*CJK*", "*CJK*Bold*"] if bold else ["*Regular*CJK*", "*CJK*Regular*", "*CJK*.ttc"]
+    for pattern in patterns:
+        found = glob.glob(f"/usr/share/fonts/**/{pattern}", recursive=True)
+        if found:
+            return found[0]
     return None
 
 
@@ -409,16 +420,24 @@ def create_shorts_video(
 def upload_to_youtube(video_path: str, meta: dict) -> str:
     log.info("📤 유튜브 업로드 중...")
 
+    import google.auth.transport.requests as google_requests
+    from google.oauth2.credentials import Credentials as OAuth2Credentials
+
     creds_info = json.loads(GOOGLE_CREDENTIALS)
-    creds = Credentials(
+    creds = OAuth2Credentials(
         token=creds_info["token"],
         refresh_token=creds_info["refresh_token"],
         token_uri="https://oauth2.googleapis.com/token",
         client_id=creds_info["client_id"],
         client_secret=creds_info["client_secret"],
+        scopes=["https://www.googleapis.com/auth/youtube.upload"],
     )
 
-    youtube = build("youtube", "v3", credentials=creds)
+    # 토큰 만료 시 자동 갱신
+    if not creds.valid:
+        creds.refresh(google_requests.Request())
+
+    youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
 
     body = {
         "snippet": {
