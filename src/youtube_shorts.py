@@ -231,6 +231,39 @@ def make_intro_frame() -> bytes:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# STEP 3-2: 아웃트로 프레임 생성 (logo.png 사용)
+# ═════════════════════════════════════════════════════════════════════════════
+def make_outro_frame() -> bytes:
+    """1080x1920 아웃트로 이미지 생성 - logo.png 사용"""
+    img = Image.new("RGB", (W, H), color=(10, 10, 20))
+    draw = ImageDraw.Draw(img)
+
+    for y in range(H):
+        t = y / H
+        r = int(30 + (80 - 30) * t)
+        g = int(0 + (20 - 0) * t)
+        b = int(60 + (120 - 60) * t)
+        draw.line([(0, y), (W, y)], fill=(r, g, b))
+
+    if os.path.exists(LOGO_PATH):
+        try:
+            logo = Image.open(LOGO_PATH).convert("RGBA")
+            logo_w = 700
+            ratio = logo_w / logo.width
+            logo_h = int(logo.height * ratio)
+            logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
+            x = (W - logo_w) // 2
+            y = (H - logo_h) // 2 - 100
+            img.paste(logo, (x, y), logo)
+        except Exception as e:
+            log.warning(f"  ⚠️ 아웃트로 로고 삽입 실패: {e}")
+
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # STEP 4: 카드 프레임 생성 (1080x1920 - 카드 중앙 + 하단 자막 영역)
 # ═════════════════════════════════════════════════════════════════════════════
 def make_card_frame(card_image_bytes: bytes, subtitle: str) -> bytes:
@@ -412,7 +445,7 @@ def create_shorts_video(
 
         # ── 아웃트로 세그먼트 ──
         log.info("  🎬 아웃트로 생성 중...")
-        outro_img_bytes = make_intro_frame()
+        outro_img_bytes = make_outro_frame()
         outro_img_path = tmpdir / "outro.png"
         outro_img_path.write_bytes(outro_img_bytes)
 
