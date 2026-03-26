@@ -46,6 +46,8 @@ jobs:
           CLOUDINARY_CLOUD_NAME:    ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_API_KEY:       ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET:    ${{ secrets.CLOUDINARY_API_SECRET }}
+          THREADS_ACCESS_TOKEN:     ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_ACCOUNT_ID:       ${{ secrets.THREADS_ACCOUNT_ID }}
           DRY_RUN:                  ${{ inputs.dry_run || 'false' }}
         run: python src/main.py
       - name: 저장소 활성 유지
