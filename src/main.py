@@ -684,6 +684,7 @@ def main():
                 blog_content_html=post_data["content_html"],
                 blog_url=blog_url,
                 tags=post_data.get("tags", []),
+                track=track,
                 image_url=image_url,
             )
             if threads_url:
