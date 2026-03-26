@@ -1,8 +1,5 @@
 """
 바이브코딩 스쿨 — URL 기반 즉시 포스팅
-──────────────────────────────────────────────
-텔레그램에서 받은 URL 내용을 읽고 블로그 + 인스타 포스팅
-완료 후 텔레그램으로 결과 알림
 """
 
 import os
@@ -34,10 +31,38 @@ CUSTOM_URL         = os.environ["CUSTOM_URL"]
 
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
+HTML_TEMPLATE_GUIDE = """
+## HTML 디자인 규칙 (바이브코딩 스쿨 템플릿 — 반드시 준수)
 
-# ═════════════════════════════════════════════════════════════
-# 텔레그램 알림
-# ═════════════════════════════════════════════════════════════
+모든 content_html은 아래 컴포넌트를 활용해서 작성해:
+
+1. 핵심 포인트 박스 (글 상단에 반드시):
+<div style="background:#F3F0FF;border-left:4px solid #6366F1;border-radius:0 8px 8px 0;padding:16px 20px;margin:24px 0"><p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#4338CA">💡 핵심 포인트</p><p style="margin:0;font-size:14px;color:#3730A3;line-height:1.7">핵심 내용 한 줄</p></div>
+
+2. 본문 단락:
+<p style="font-size:16px;color:#374151;line-height:1.8;margin:20px 0">내용</p>
+
+3. H2 제목:
+<h2 style="font-size:18px;font-weight:700;color:#1E1B4B;margin:32px 0 16px;padding-bottom:8px;border-bottom:2px solid #6366F1">제목</h2>
+
+4. 번호 카드 (핵심 내용 3가지 등):
+<div style="background:#fff;border:1px solid #E0E7FF;border-radius:12px;padding:16px;display:flex;gap:16px;align-items:flex-start;margin-bottom:12px"><div style="background:#6366F1;color:#fff;font-size:14px;font-weight:700;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0">1</div><div><p style="margin:0 0 6px;font-size:15px;font-weight:700;color:#1E1B4B">소제목</p><p style="margin:0;font-size:14px;color:#4B5563;line-height:1.6">내용</p></div></div>
+
+5. 아이콘 카드 (직업별/대상별):
+<div style="background:#fff;border:1px solid #E0E7FF;border-radius:12px;padding:16px;display:flex;gap:16px;align-items:flex-start;margin-bottom:12px"><div style="background:#6366F1;color:#fff;font-size:14px;font-weight:700;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0">💼</div><div><p style="margin:0 0 6px;font-size:15px;font-weight:700;color:#1E1B4B">대상</p><p style="margin:0;font-size:14px;color:#4B5563;line-height:1.6">내용</p></div></div>
+
+6. 강조 박스 (팁/주의/추천):
+<div style="background:#EEF2FF;border-radius:12px;padding:16px 20px;margin:20px 0"><p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#6366F1">🎯 바이브코딩 추천</p><p style="margin:0;font-size:14px;color:#3730A3;line-height:1.6">내용 <mark style="background:#C7D2FE;color:#3730A3;padding:2px 6px;border-radius:4px">강조</mark></p></div>
+
+규칙:
+- 번호 카드는 숫자(1,2,3), 아이콘 카드는 이모지(💼🏪📚🏠📊) 사용
+- 핵심 내용은 반드시 번호/아이콘 카드 형태로
+- 일반 본문은 p 태그로
+- strong 태그 대신 mark 태그로 강조
+- 글 마지막에 바이브코딩 추천 박스 필수
+"""
+
+
 def send_telegram(text: str):
     try:
         requests.post(
@@ -49,11 +74,7 @@ def send_telegram(text: str):
         log.warning(f"텔레그램 알림 실패: {e}")
 
 
-# ═════════════════════════════════════════════════════════════
-# 유틸
-# ═════════════════════════════════════════════════════════════
 def extract_text(response) -> str:
-    """Claude 응답에서 텍스트 안전하게 추출 (웹서치 포함)"""
     texts = []
     for block in response.content:
         if hasattr(block, "text") and isinstance(block.text, str) and block.text.strip():
@@ -62,14 +83,12 @@ def extract_text(response) -> str:
 
 
 def parse_json_from_text(raw: str) -> dict:
-    """텍스트에서 JSON 파싱"""
     if "```" in raw:
         for part in raw.split("```"):
             part = part.strip().lstrip("json").strip()
             if part.startswith("{"):
                 raw = part
                 break
-    # JSON 블록만 추출
     start = raw.find("{")
     end   = raw.rfind("}") + 1
     if start != -1 and end > start:
@@ -77,29 +96,8 @@ def parse_json_from_text(raw: str) -> dict:
     return json.loads(raw.strip())
 
 
-def call_claude(prompt: str, max_tokens: int = 4000) -> dict:
-    for attempt in range(3):
-        try:
-            time.sleep(10)
-            response = claude.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            raw = extract_text(response)
-            return parse_json_from_text(raw)
-        except Exception as e:
-            wait = 20 * (attempt + 1)
-            log.warning(f"  ⚠️ Claude 호출 실패 (시도 {attempt+1}/3): {e}")
-            time.sleep(wait)
-    raise RuntimeError("Claude API 호출 3회 모두 실패")
-
-
-# ═════════════════════════════════════════════════════════════
-# STEP 1: URL 내용 읽기 + 블로그 글 생성
-# ═════════════════════════════════════════════════════════════
 def generate_post_from_url(url: str) -> dict:
-    log.info(f"🔍 URL 내용 분석 중: {url[:60]}...")
+    log.info(f"URL 내용 분석 중: {url[:60]}...")
     year  = datetime.now().year
     today = datetime.now().strftime("%Y년 %m월 %d일")
 
@@ -113,35 +111,49 @@ URL: {url}
 - 독자: 코딩 0% 일반인 (직장인, 소상공인, 주부, 학생)
 - 어조: 친근한 선생님 ("~해요", "~거예요", "~네요")
 - 전문용어 나오면 반드시 쉽게 풀어서 설명
-- URL의 핵심 내용을 반드시 본문에 녹여낼 것
+- URL의 핵심 내용을 원문 그대로 유지하며 녹여낼 것 (요약 금지)
 - {year}년 현재 기준으로 작성
 - 분량: 2000~2500자
 
+## 사실 확인 원칙 (반드시 준수)
+- URL에 명시된 수치/통계/사실만 사용
+- URL에 없는 내용 절대 창작/추측 금지
+- 수치 인용 시 논리적 일관성 확인
+- 불확실한 내용은 "~라고 알려져 있어요" 등 완화 표현 사용
+
 ## 글 구조
-1. 핵심 내용 한 줄 요약으로 시작 (독자 관심 유발)
+1. 핵심 포인트 박스로 시작
 2. 이게 왜 중요한지 쉽게 설명
-3. 핵심 내용 3가지로 정리
-4. 독자에게 미치는 영향
-5. 마무리 + 행동 유도
+3. 핵심 내용 3가지 (번호 카드로)
+4. 독자별 영향 (아이콘 카드로)
+5. 바이브코딩 추천 박스
+6. 마무리
+
+## SEO 제목 규칙
+- 형식: [핵심 키워드] + [구체적 방법/결과] + [대상 또는 연도]
+- 숫자 포함 권장
+- 클릭베이트 절대 금지: "충격!", "경악!", "혁명!" 사용 금지
+
+{HTML_TEMPLATE_GUIDE}
 
 ## 출력 (JSON만, 코드블록 없이)
 {{
   "title_candidates": [
-    "클릭률 높은 SEO 제목 1 ({year}년, 구체적)",
-    "클릭률 높은 SEO 제목 2 ({year}년, 구체적)",
-    "클릭률 높은 SEO 제목 3 ({year}년, 구체적)"
+    "SEO 제목 1 ({year}년)",
+    "SEO 제목 2 ({year}년)",
+    "SEO 제목 3 ({year}년)"
   ],
   "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
-  "content_html": "완성된 HTML 본문 (h2 h3 p ul li strong 사용)"
+  "content_html": "완성된 HTML 본문"
 }}
 """
-    # 웹서치로 URL 내용 읽기
+
     for attempt in range(3):
         try:
             time.sleep(10)
             response = claude.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=4000,
+                max_tokens=6000,
                 tools=[{"type": "web_search_20250305", "name": "web_search"}],
                 tool_choice={"type": "auto"},
                 messages=[{"role": "user", "content": prompt}],
@@ -149,18 +161,15 @@ URL: {url}
             raw = extract_text(response)
             if not raw:
                 raise ValueError("응답 텍스트 없음")
-            log.info(f"  ✅ URL 내용 분석 완료 ({len(raw)}자)")
+            log.info(f"  URL 내용 분석 완료 ({len(raw)}자)")
             return parse_json_from_text(raw)
         except Exception as e:
             wait = 20 * (attempt + 1)
-            log.warning(f"  ⚠️ URL 분석 실패 (시도 {attempt+1}/3): {e}")
+            log.warning(f"  URL 분석 실패 (시도 {attempt+1}/3): {e}")
             time.sleep(wait)
     raise RuntimeError("URL 내용 읽기 3회 모두 실패")
 
 
-# ═════════════════════════════════════════════════════════════
-# STEP 2: SEO 제목 선택
-# ═════════════════════════════════════════════════════════════
 def select_best_title(post_data: dict) -> str:
     candidates = "\n".join(
         f"{i+1}. {t}" for i, t in enumerate(post_data["title_candidates"])
@@ -176,11 +185,8 @@ def select_best_title(post_data: dict) -> str:
     return extract_text(response)
 
 
-# ═════════════════════════════════════════════════════════════
-# STEP 3: 썸네일 생성
-# ═════════════════════════════════════════════════════════════
-def generate_thumbnail(title: str, tags: list) -> str:
-    log.info("🎨 썸네일 생성 중...")
+def generate_thumbnail(title: str) -> str:
+    log.info("썸네일 생성 중...")
     try:
         response = claude.messages.create(
             model="claude-sonnet-4-20250514",
@@ -203,16 +209,13 @@ def generate_thumbnail(title: str, tags: list) -> str:
         resp.raise_for_status()
         for part in resp.json()["candidates"][0]["content"]["parts"]:
             if "inlineData" in part:
-                log.info("  ✅ 썸네일 생성 완료")
+                log.info("  썸네일 생성 완료")
                 return part["inlineData"]["data"]
     except Exception as e:
-        log.warning(f"  ⚠️ 썸네일 생성 실패: {e}")
+        log.warning(f"  썸네일 생성 실패: {e}")
     return ""
 
 
-# ═════════════════════════════════════════════════════════════
-# STEP 4: Blogger 포스팅
-# ═════════════════════════════════════════════════════════════
 def upload_image_to_imgur(image_b64: str) -> str:
     if not image_b64:
         return ""
@@ -228,12 +231,12 @@ def upload_image_to_imgur(image_b64: str) -> str:
         if data.get("success"):
             return data["data"]["link"]
     except Exception as e:
-        log.warning(f"  ⚠️ imgur 업로드 실패: {e}")
+        log.warning(f"  imgur 업로드 실패: {e}")
     return ""
 
 
 def post_to_blogger(title: str, post_data: dict, image_b64: str) -> str:
-    log.info("📤 Blogger 포스팅 중...")
+    log.info("Blogger 포스팅 중...")
     image_url = upload_image_to_imgur(image_b64)
     if not image_url:
         image_url = "https://placehold.co/1200x630/6366f1/ffffff?text=Vibe+Coding+School"
@@ -271,56 +274,70 @@ def post_to_blogger(title: str, post_data: dict, image_b64: str) -> str:
         isDraft=False,
     ).execute()
     post_url = result.get("url", "URL 없음")
-    log.info(f"  ✅ 포스팅 완료: {post_url}")
+    log.info(f"  포스팅 완료: {post_url}")
     return post_url
 
 
-# ═════════════════════════════════════════════════════════════
-# 메인
-# ═════════════════════════════════════════════════════════════
 def main():
     log.info("=" * 60)
-    log.info(f"🚀 URL 기반 즉시 포스팅 시작")
-    log.info(f"   URL: {CUSTOM_URL[:60]}...")
+    log.info(f"URL 기반 즉시 포스팅 시작")
+    log.info(f"URL: {CUSTOM_URL[:60]}...")
     log.info("=" * 60)
 
     try:
-        # 1. URL 읽고 블로그 글 생성
         post_data  = generate_post_from_url(CUSTOM_URL)
         best_title = select_best_title(post_data)
-        log.info(f"  ✅ 제목: {best_title}")
+        log.info(f"  제목: {best_title}")
 
-        # 2. 썸네일 생성
-        image_b64 = generate_thumbnail(best_title, post_data.get("tags", []))
+        image_b64 = generate_thumbnail(best_title)
+        blog_url  = post_to_blogger(best_title, post_data, image_b64)
 
-        # 3. 블로그 포스팅
-        blog_url = post_to_blogger(best_title, post_data, image_b64)
-
-        # 4. 인스타 포스팅
+        # 인스타 카드뉴스
         insta_url = None
+        card_image_urls = []
         try:
             from instagram import post_instagram
-            insta_url = post_instagram(
+            insta_result = post_instagram(
                 blog_title=best_title,
                 blog_content_html=post_data["content_html"],
                 tags=post_data.get("tags", []),
             )
-            log.info(f"  📸 인스타 포스팅 완료: {insta_url}")
+            if isinstance(insta_result, tuple):
+                insta_url, card_image_urls = insta_result
+            else:
+                insta_url = insta_result
+            log.info(f"  인스타 포스팅 완료: {insta_url}")
         except Exception as e:
-            log.warning(f"  ⚠️ 인스타 포스팅 실패: {e}")
+            log.warning(f"  인스타 포스팅 실패: {e}")
 
-        # 5. 텔레그램 완료 알림
+        # 유튜브 쇼츠 + 인스타 릴스
+        youtube_url = None
+        try:
+            from youtube_shorts import post_youtube_shorts
+            youtube_url = post_youtube_shorts(
+                title=best_title,
+                content_html=post_data["content_html"],
+                blog_url=blog_url,
+                card_image_urls=card_image_urls,
+            )
+            if youtube_url:
+                log.info(f"  유튜브 쇼츠 완료: {youtube_url}")
+        except Exception as e:
+            log.warning(f"  유튜브 쇼츠 실패: {e}")
+
         msg = f"✅ 포스팅 완료!\n\n📝 제목: {best_title}\n\n🌐 블로그: {blog_url}"
         if insta_url:
             msg += f"\n📸 인스타: {insta_url}"
+        if youtube_url:
+            msg += f"\n🎬 유튜브: {youtube_url}"
         send_telegram(msg)
 
         log.info("=" * 60)
-        log.info("🎉 완료!")
+        log.info("완료!")
         log.info("=" * 60)
 
     except Exception as e:
-        log.error(f"❌ 실패: {e}", exc_info=True)
+        log.error(f"실패: {e}", exc_info=True)
         send_telegram(f"❌ 포스팅 실패했어요!\n\n오류: {str(e)[:200]}")
         sys.exit(1)
 
