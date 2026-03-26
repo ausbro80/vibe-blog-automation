@@ -676,6 +676,21 @@ def main():
         except Exception as e:
             log.warning(f"  ⚠️ 유튜브 쇼츠 실패 (블로그는 정상): {e}")
 
+        # ✅ Threads 포스팅
+        try:
+            from threads import post_threads
+            threads_url = post_threads(
+                blog_title=best_title,
+                blog_content_html=post_data["content_html"],
+                blog_url=blog_url,
+                tags=post_data.get("tags", []),
+                image_url=image_url,
+            )
+            if threads_url:
+                log.info(f"  🧵 Threads 포스팅 완료: {threads_url}")
+        except Exception as e:
+            log.warning(f"  ⚠️ Threads 포스팅 실패 (블로그는 정상): {e}")
+
         log.info("=" * 60)
         log.info("🎉 전체 파이프라인 완료!")
         log.info(f"   트랙: {track.upper()} | 주제: {topic_data['topic']}")
