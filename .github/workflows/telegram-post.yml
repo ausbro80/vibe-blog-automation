@@ -17,7 +17,7 @@ jobs:
   post-from-url:
     name: URL 기반 블로그 글 생성 및 포스팅
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     permissions:
       contents: write
     steps:
