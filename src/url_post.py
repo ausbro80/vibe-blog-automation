@@ -153,7 +153,7 @@ URL: {url}
             time.sleep(10)
             response = claude.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=6000,
+                max_tokens=8000,
                 tools=[{"type": "web_search_20250305", "name": "web_search"}],
                 tool_choice={"type": "auto"},
                 messages=[{"role": "user", "content": prompt}],
