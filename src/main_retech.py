@@ -71,7 +71,7 @@ def clean_markdown(html: str) -> str:
     return html
 
 
-def search(query: str, max_tokens: int = 2000) -> str:
+def search(query: str, max_tokens: int = 6000) -> str:
     today = datetime.now().strftime("%Y년 %m월 %d일")
     for attempt in range(3):
         try:
