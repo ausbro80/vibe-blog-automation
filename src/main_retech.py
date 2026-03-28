@@ -374,7 +374,7 @@ def generate_post(track: str, topic_data: dict, deep_research: str) -> dict:
   "slug": "seo-korean-slug-{year}"
 }}
 """
-    meta_data = call_claude(meta_prompt, max_tokens=800)
+    meta_data = call_claude(meta_prompt, max_tokens=8000)
     log.info("  ✅ 메타데이터 생성 완료")
 
     # 2단계: HTML 본문만 순수 텍스트로 받기
