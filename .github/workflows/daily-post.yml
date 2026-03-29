@@ -24,17 +24,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Python 3.11 설치
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
+
       - name: 패키지 설치
         run: pip install -r requirements.txt
+
       - name: 한글 폰트 + ffmpeg 설치
         run: |
           sudo apt-get update --fix-missing || true
           sudo apt-get install -y --fix-missing fonts-noto-cjk ffmpeg || true
+
       - name: 블로그 자동화 실행
         env:
           ANTHROPIC_API_KEY:        ${{ secrets.ANTHROPIC_API_KEY }}
@@ -50,6 +54,17 @@ jobs:
           THREADS_ACCOUNT_ID:       ${{ secrets.THREADS_ACCOUNT_ID }}
           DRY_RUN:                  ${{ inputs.dry_run || 'false' }}
         run: python src/main.py
+
+      # ↓ 추가된 부분 — posted_history.json 변경분 커밋
+      - name: 중복 방지 히스토리 저장
+        run: |
+          git config user.email "action@github.com"
+          git config user.name "GitHub Action"
+          git pull --rebase origin main
+          git add src/posted_history.json
+          git diff --staged --quiet || git commit -m "chore: update posted_history [skip ci]"
+          git push
+
       - name: 저장소 활성 유지
         run: |
           git config user.email "action@github.com"
