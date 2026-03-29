@@ -3,35 +3,37 @@ Google OAuth 초기 설정 스크립트
 ────────────────────────────────
 최초 1회만 로컬에서 실행하세요.
 생성된 JSON을 GitHub Secrets에 GOOGLE_CREDENTIALS_JSON으로 등록하면 됩니다.
-
 실행 방법:
   pip install google-auth-oauthlib
   python setup_google_auth.py
 """
-
 import json
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 
-# Blogger + YouTube 업로드 권한
+# Blogger + YouTube + Cloud TTS 권한
 SCOPES = [
     "https://www.googleapis.com/auth/blogger",
     "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/cloud-platform",  # ← Cloud TTS 추가
 ]
 
 def main():
     print("=" * 55)
-    print("  Google Blogger + YouTube OAuth 인증 설정")
+    print("  Google Blogger + YouTube + Cloud TTS OAuth 인증 설정")
     print("=" * 55)
     print()
     print("📋 사전 준비:")
     print("  1. https://console.cloud.google.com 접속")
-    print("  2. 기존 프로젝트 선택 (Blogger 만들 때 쓴 프로젝트)")
-    print("  3. 'YouTube Data API v3' 활성화")
-    print("     (Blogger API는 이미 활성화되어 있음)")
+    print("  2. 기존 프로젝트 선택")
+    print("  3. 아래 API 활성화 확인:")
+    print("     - Blogger API ✅ (이미 됨)")
+    print("     - YouTube Data API v3 ✅ (이미 됨)")
+    print("     - Cloud Text-to-Speech API ← 새로 추가 필요!")
+    print("       https://console.cloud.google.com/apis/library/texttospeech.googleapis.com")
     print("  4. 기존 client_secret.json 그대로 사용 가능")
     print()
-    print("⚠️  브라우저에서 인증 시 업로드할 유튜브 채널 계정으로 로그인!")
+    print("⚠️  브라우저에서 인증 시 유튜브 채널 계정으로 로그인!")
     print()
 
     client_secret_file = input("client_secret.json 파일 경로 (엔터 = 현재 폴더): ").strip()
@@ -55,7 +57,7 @@ def main():
     })
 
     print()
-    print("✅ 인증 완료! (Blogger + YouTube 권한 포함)")
+    print("✅ 인증 완료! (Blogger + YouTube + Cloud TTS 권한 포함)")
     print()
     print("━" * 55)
     print("📋 아래 JSON을 복사해서 GitHub Secrets에 등록하세요")
@@ -66,7 +68,6 @@ def main():
     print("━" * 55)
     print()
 
-    # 파일로도 저장
     with open("google_credentials.json", "w") as f:
         f.write(credentials_json)
     print("💾 google_credentials.json 파일로도 저장되었습니다.")
