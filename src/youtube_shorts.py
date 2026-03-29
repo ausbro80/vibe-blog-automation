@@ -1,9 +1,10 @@
 """
 바이브코딩 스쿨 — YouTube Shorts 자동화 v3.1
 ─────────────────────────────────────────
-v3.1 변경사항:
-  - Gemini TTS (유료) → Google Cloud TTS (월 100만자 무료) 교체
-  - 한국어 WaveNet 음성 사용 (ko-KR-Wavenet-A)
+v3.2 변경사항:
+  - Gemini TTS (유료) → Google Cloud TTS Chirp 3 HD (월 100만자 무료) 교체
+  - 한국어 남성 음성 사용 (ko-KR-Chirp3-HD-Charon)
+  - Chirp 3 HD 리전 엔드포인트 적용 (us-texttospeech)
 """
 
 import os
@@ -354,11 +355,10 @@ def make_outro_frame() -> bytes:
 # [v3.1] Gemini TTS (유료) → Google Cloud TTS (무료) 교체
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_voice(script: str) -> bytes:
-    """Google Cloud TTS로 한국어 음성 생성 (월 100만자 무료)"""
+    """Google Cloud TTS Chirp 3 HD로 한국어 남성 음성 생성 (월 100만자 무료)"""
     import google.auth.transport.requests as google_requests
     from google.oauth2.credentials import Credentials as OAuth2Credentials
 
-    # 서비스 계정 대신 기존 OAuth 크레덴셜 재사용
     creds_info = json.loads(GOOGLE_CREDENTIALS)
     creds = OAuth2Credentials(
         token=creds_info["token"],
@@ -371,7 +371,8 @@ def generate_voice(script: str) -> bytes:
     if not creds.valid:
         creds.refresh(google_requests.Request())
 
-    url = "https://texttospeech.googleapis.com/v1/text:synthesize"
+    # Chirp 3 HD는 리전 엔드포인트 필요
+    url = "https://us-texttospeech.googleapis.com/v1beta1/text:synthesize"
     headers = {
         "Authorization": f"Bearer {creds.token}",
         "Content-Type": "application/json",
@@ -380,13 +381,11 @@ def generate_voice(script: str) -> bytes:
         "input": {"text": script},
         "voice": {
             "languageCode": "ko-KR",
-            "name": "ko-KR-Wavenet-A",   # 자연스러운 한국어 여성 음성
-            "ssmlGender": "FEMALE",
+            "name": "ko-KR-Chirp3-HD-Charon",  # 자연스러운 한국어 남성 음성
         },
         "audioConfig": {
-            "audioEncoding": "LINEAR16",  # WAV 형식 (ffmpeg 호환)
-            "speakingRate": 1.1,          # 약간 빠르게 (쇼츠용)
-            "pitch": 1.0,
+            "audioEncoding": "LINEAR16",
+            "speakingRate": 1.1,   # 약간 빠르게 (쇼츠용)
             "sampleRateHertz": 24000,
         },
     }
