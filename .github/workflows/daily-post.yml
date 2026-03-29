@@ -61,9 +61,9 @@ jobs:
           git config user.email "action@github.com"
           git config user.name "GitHub Action"
           git pull --rebase origin main
-          git add src/posted_history.json
+          [ -f src/posted_history.json ] && git add src/posted_history.json || true
           git diff --staged --quiet || git commit -m "chore: update posted_history [skip ci]"
-          git push
+          git push || true
 
       - name: 저장소 활성 유지
         run: |
