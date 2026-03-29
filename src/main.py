@@ -200,18 +200,45 @@ def build_avoid_context(history: dict, blogger_titles: list[str]) -> str:
     """중복 방지용 '이미 다룬 내용' 컨텍스트 문자열 생성."""
     lines = []
 
-    # 로컬 히스토리에서 최근 30개
-    recent = history["posts"][-30:]
-    if recent:
-        lines.append("## 최근 로컬 히스토리 (중복 금지)")
-        for p in recent:
-            lines.append(f"- [{p['track']}] {p['date']} | 툴: {p.get('tool','?')} | 주제: {p['topic']}")
+    all_posts = history["posts"]
+    if all_posts:
+        # 툴별 최근 다룬 날짜 집계
+        tool_map: dict[str, list[str]] = {}
+        for p in all_posts:
+            tool = p.get("tool") or "기타"
+            tool_map.setdefault(tool, []).append(p["date"])
 
-    # Blogger 최근 제목
+        lines.append("## 툴별 최근 다룬 날짜 (같은 툴은 최소 5일 이상 간격 필요)")
+        for tool, dates in sorted(tool_map.items()):
+            last = max(dates)
+            count = len(dates)
+            lines.append(f"- {tool}: 총 {count}회 다룸, 마지막 {last}")
+
+        # 최근 14일 포스트 상세
+        cutoff_14 = datetime.now() - timedelta(days=14)
+        recent_14 = [
+            p for p in all_posts
+            if datetime.strptime(p["date"], "%Y-%m-%d %H:%M") > cutoff_14
+        ]
+        if recent_14:
+            lines.append("\n## 최근 14일 포스트 상세 (제목·주제 유사 금지)")
+            for p in recent_14:
+                lines.append(
+                    f"- [{p['track']}] {p['date']} | {p.get('tool','?')} | {p['title']}"
+                )
+
+    # Blogger 전체 제목
     if blogger_titles:
-        lines.append("\n## 최근 블로그 포스트 제목 (유사 주제 금지)")
+        lines.append("\n## 블로그 기존 포스트 제목 전체 (유사 각도·주제 금지)")
         for t in blogger_titles:
             lines.append(f"- {t}")
+
+    lines.append("""
+## ⛔ 중복 판단 기준 (제목이 달라도 아래 해당하면 중복)
+- 같은 툴을 5일 이내에 다시 다루는 경우
+- 같은 툴의 '활용법', '설정 가이드', '사용법' 등 각도만 바꾼 경우
+- 같은 뉴스 이벤트를 다른 제목으로 반복하는 경우
+→ 위 기준 해당 시 반드시 다른 툴 / 완전히 다른 주제 선택""")
 
     return "\n".join(lines)
 
