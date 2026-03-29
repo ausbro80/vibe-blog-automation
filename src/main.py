@@ -1,17 +1,12 @@
 """
-바이브코딩 스쿨 (VIBE CODING School) — Blog Automation v6
+바이브코딩 스쿨 (VIBE CODING School) — Blog Automation v6.2
 ──────────────────────────────────────────────────────────
-트랙 구성:
-  아침 9시 → 📰 뉴스 트랙: 오늘의 TOP AI 코딩 뉴스 요약 + 핫한 것 1개 실전 튜토리얼
-  저녁 9시 → 📚 교육 트랙 / 🛠️ 툴 사용법 트랙 (하루씩 번갈아)
-
-v6.0 수정사항:
-  - 검색 쿼리 전면 개편 → 요즘 진짜 핫한 툴 중심
-  - Claude Code, Cowork, Google Stitch, Gemini 2.5, Antigravity, Firebase Genkit 등
-  - Cursor/Windsurf/Bolt/Replit 기본 제외 → major 업데이트 있을 때만 선택
-  - 24시간 이내 최신 업데이트/핫토픽 우선 수집
-  - 직장인/주부 표현 완전 제거
-  - Lovable 편중 방지
+v6.2 수정사항:
+  - [중복 방지 1] Blogger API로 최근 20개 포스트 제목 수집 → 주제 결정 시 참고
+  - [중복 방지 2] posted_history.json으로 로컬 주제/툴 기록 관리
+  - [제목-내용 일치 1] 본문 먼저 생성 → 본문 기반으로 제목 생성 (순서 변경)
+  - [제목-내용 일치 2] verify_title_content_match() 검증 단계 추가
+    → 제목의 숫자/키워드가 본문과 불일치하면 자동으로 제목 재생성
 """
 
 import os
@@ -20,7 +15,8 @@ import sys
 import json
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
 
 import anthropic
 import requests
@@ -40,6 +36,9 @@ BLOGGER_BLOG_ID    = os.environ["BLOGGER_BLOG_ID"]
 GOOGLE_CREDENTIALS = os.environ["GOOGLE_CREDENTIALS_JSON"]
 
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+# 로컬 히스토리 파일 경로
+HISTORY_FILE = Path("posted_history.json")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -134,42 +133,104 @@ def get_track() -> tuple:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 이미지 업로드
+# [NEW v6.1] 중복 방지 — 히스토리 관리
 # ═════════════════════════════════════════════════════════════════════════════
-def upload_image_to_imgur(image_b64: str) -> str:
-    if not image_b64:
-        return ""
+def load_history() -> dict:
+    """로컬 posted_history.json 로드. 없으면 빈 구조 반환."""
+    if HISTORY_FILE.exists():
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"posts": []}
+
+
+def save_history(history: dict):
+    """히스토리를 JSON 파일에 저장."""
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+
+
+def add_to_history(history: dict, title: str, topic: str, tool: str, track: str):
+    """새 포스트 정보를 히스토리에 추가하고 90일 이상 된 항목 정리."""
+    history["posts"].append({
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "title": title,
+        "topic": topic,
+        "tool": tool,
+        "track": track,
+    })
+    # 90일 이상 된 항목 제거
+    cutoff = datetime.now() - timedelta(days=90)
+    history["posts"] = [
+        p for p in history["posts"]
+        if datetime.strptime(p["date"], "%Y-%m-%d %H:%M") > cutoff
+    ]
+    save_history(history)
+
+
+def get_blogger_recent_titles(max_results: int = 20) -> list[str]:
+    """Blogger API로 최근 포스트 제목 N개 가져오기."""
     try:
-        log.info("☁️  이미지 imgur 업로드 중...")
-        resp = requests.post(
-            "https://api.imgur.com/3/image",
-            headers={"Authorization": "Client-ID 546c25a59c58ad7"},
-            data={"image": image_b64, "type": "base64"},
-            timeout=60,
+        creds_info = json.loads(GOOGLE_CREDENTIALS)
+        creds = Credentials(
+            token=creds_info["token"],
+            refresh_token=creds_info["refresh_token"],
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=creds_info["client_id"],
+            client_secret=creds_info["client_secret"],
         )
-        resp.raise_for_status()
-        data = resp.json()
-        if data.get("success"):
-            img_url = data["data"]["link"]
-            log.info(f"  ✅ imgur 업로드 완료: {img_url}")
-            return img_url
-        return ""
+        service = build("blogger", "v3", credentials=creds)
+        result = service.posts().list(
+            blogId=BLOGGER_BLOG_ID,
+            maxResults=max_results,
+            fields="items(title)",
+            fetchBodies=False,
+        ).execute()
+        titles = [item["title"] for item in result.get("items", [])]
+        log.info(f"  📋 최근 Blogger 포스트 {len(titles)}개 제목 수집 완료")
+        return titles
     except Exception as e:
-        log.warning(f"  ⚠️ imgur 업로드 실패 ({e})")
-        return ""
+        log.warning(f"  ⚠️ Blogger 최근 제목 수집 실패: {e}")
+        return []
+
+
+def build_avoid_context(history: dict, blogger_titles: list[str]) -> str:
+    """중복 방지용 '이미 다룬 내용' 컨텍스트 문자열 생성."""
+    lines = []
+
+    # 로컬 히스토리에서 최근 30개
+    recent = history["posts"][-30:]
+    if recent:
+        lines.append("## 최근 로컬 히스토리 (중복 금지)")
+        for p in recent:
+            lines.append(f"- [{p['track']}] {p['date']} | 툴: {p.get('tool','?')} | 주제: {p['topic']}")
+
+    # Blogger 최근 제목
+    if blogger_titles:
+        lines.append("\n## 최근 블로그 포스트 제목 (유사 주제 금지)")
+        for t in blogger_titles:
+            lines.append(f"- {t}")
+
+    return "\n".join(lines)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 1: 오늘의 주제 결정 (24시간 핫토픽 기반)
+# STEP 1: 오늘의 주제 결정 (24시간 핫토픽 기반 + 중복 방지)
 # ═════════════════════════════════════════════════════════════════════════════
-def decide_topic(track: str, tool_name: str = None) -> dict:
+def decide_topic(track: str, avoid_context: str, tool_name: str = None) -> dict:
     log.info(f"🧠 [{track.upper()}] 오늘의 주제 AI 자동 결정 중...")
 
     year  = datetime.now().year
     today = datetime.now().strftime("%Y년 %m월 %d일")
 
+    avoid_block = f"""
+## ⛔ 중복 방지 — 아래 주제/툴/제목과 겹치는 것은 절대 선택 금지
+{avoid_context}
+""" if avoid_context else ""
+
     if track == "news":
-        # 요즘 진짜 핫한 툴 중심으로 수집
         trend1 = search("Claude Code Anthropic Cowork update release 2026 latest 24h")
         trend2 = search("Google Stitch Gemini 2.5 AI Studio Veo update 2026 latest")
         trend3 = search("Antigravity Firebase Genkit AI app builder 2026 latest")
@@ -187,22 +248,20 @@ def decide_topic(track: str, tool_name: str = None) -> dict:
 오늘({today}) 최근 24~48시간 AI 코딩/AI 툴 업계 최신 소식입니다:
 {context}
 
+{avoid_block}
+
 위 정보를 바탕으로 오늘의 뉴스 포스트를 구성해줘.
 
 ## 뉴스 선정 원칙
 - 반드시 최근 24~48시간 이내에 발생한 소식 우선
 - 오래된 일반 설명 기사 제외
 - 실제 업데이트/출시/정책변경/가격변경 등 구체적 뉴스 선정
+- 이미 다룬 툴/주제는 반드시 피할 것
 
 ## 도구 우선순위 (요즘 핫한 것)
 최우선: Claude Code, Cowork, Google Stitch, Gemini 2.5, Antigravity, Firebase Genkit, Veo, Sora
 보통: ChatGPT, Perplexity, GitHub Copilot, Devin, v0, NotebookLM
 하위 (major 업데이트 있을 때만): Cursor, Windsurf, Bolt, Replit, Lovable
-
-## 오늘의 픽 선정 기준
-- 독자가 바로 따라해볼 수 있는 것
-- 실전 튜토리얼로 만들기 좋은 것
-- 오늘 가장 화제가 된 것
 
 JSON만 출력 (코드블록 없이):
 {{
@@ -216,13 +275,12 @@ JSON만 출력 (코드블록 없이):
   "todays_pick": "오늘의 픽 뉴스 제목",
   "todays_pick_tool": "오늘의 픽 도구명",
   "todays_pick_reason": "픽으로 선정한 이유",
-  "reason": "전체 주제 선택 이유",
+  "reason": "전체 주제 선택 이유 + 중복 피한 방법",
   "search_queries": ["픽 심화 검색 쿼리1", "픽 심화 검색 쿼리2", "픽 실전 사용법 쿼리"]
 }}
 """
 
     elif track == "tool":
-        # 요즘 핫한 툴 중심 수집
         trend1 = search("Claude Code Cowork Google Stitch new feature update 2026 latest")
         trend2 = search("Antigravity Firebase Genkit Gemini AI Studio update 2026 latest")
         trend3 = search("AI coding design tool trending viral 2026 today")
@@ -236,7 +294,10 @@ JSON만 출력 (코드블록 없이):
 [전체 트렌드]
 {trend3}
 
+{avoid_block}
+
 오늘 다룰 AI 도구를 선택하고 포스트 주제를 결정해줘.
+이미 최근에 다룬 툴은 반드시 피할 것.
 
 ## 도구 우선순위 (요즘 진짜 핫한 것)
 최우선 선택:
@@ -253,17 +314,11 @@ JSON만 출력 (코드블록 없이):
 하위 우선순위 (major 업데이트 있을 때만):
 - Cursor, Windsurf, Bolt, Replit, Lovable
 
-## 주제 유형
-- 최신 업데이트 실전 사용법
-- 코딩 없이 따라하는 단계별 가이드
-- 이 도구로 실제로 만들어보기
-- 다른 도구와 비교
-
 JSON만 출력:
 {{
   "topic": "오늘의 툴 주제 (한 문장)",
   "tool": "선택한 AI 도구 이름",
-  "reason": "이 도구와 주제를 선택한 이유",
+  "reason": "이 도구와 주제를 선택한 이유 + 중복 피한 방법",
   "search_queries": ["심화 검색 쿼리1", "심화 검색 쿼리2", "실전 사용법 쿼리"]
 }}
 """
@@ -282,7 +337,10 @@ JSON만 출력:
 [전체 트렌드]
 {trend3}
 
+{avoid_block}
+
 오늘 교육 포스트 주제를 결정해줘.
+이미 다룬 주제와 겹치지 않게 선택할 것.
 
 ## 주제 유형
 - 요즘 핫한 AI 툴 실전 자동화 가이드
@@ -298,12 +356,12 @@ JSON만 출력:
 JSON만 출력:
 {{
   "topic": "오늘의 교육 주제 (한 문장)",
-  "reason": "이 주제를 선택한 이유",
+  "reason": "이 주제를 선택한 이유 + 중복 피한 방법",
   "search_queries": ["심화 검색 쿼리1", "심화 검색 쿼리2", "실전 적용 쿼리"]
 }}
 """
 
-    topic_data = call_claude(prompt, max_tokens=1000)
+    topic_data = call_claude(prompt, max_tokens=1200)
     log.info(f"  ✅ 결정된 주제: {topic_data['topic']}")
     log.info(f"  💡 선택 이유: {topic_data.get('reason', '')}")
     return topic_data
@@ -325,7 +383,7 @@ def collect_deep_news(topic_data: dict) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 3: 블로그 글 생성
+# STEP 3: 블로그 글 생성 (v6.1: 본문 먼저 → 제목 나중)
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
     log.info("✍️  블로그 글 작성 시작...")
@@ -352,15 +410,10 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 - 없는 내용 창작/추측 금지
 - 불확실한 내용은 "~라고 알려져 있어요" 완화 표현 사용
 
-## SEO 제목 규칙
-- 형식: [핵심 키워드] + [구체적 방법/결과] + [{year}]
-- 숫자 포함 권장
-- 클릭베이트 절대 금지 ("충격!", "경악!", "혁명!", "드디어" 등)
-
-## 태그 규칙
-- 총 3~5개만
-- 필수 1~2개: Claude, 바이브코딩, AI코딩, 앱개발, AI자동화, AI에이전트, 초보자가이드
-- 선택 (핵심 주제일 때만): GitHub, Cursor, Windsurf, Lovable, Perplexity, Gemini, OpenAI
+## ⚠️ 제목 숫자/키워드 규칙 (매우 중요)
+- 본문에서 실제로 다루는 단계/방법/팁의 개수를 먼저 확인하고 작성할 것
+- "12가지", "7단계", "5가지" 같은 숫자는 본문 실제 개수와 반드시 일치해야 함
+- 본문 작성 전에 몇 가지를 다룰지 먼저 결정하고 그 숫자에 맞춰 작성
 """
 
     if track == "news":
@@ -387,12 +440,12 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 ### 파트 2: 🎯 오늘의 픽 — {todays_pick} ({todays_tool})
 오늘 가장 핫한 것을 골라서 실전 튜토리얼로 자세히 알려줘.
 - 이게 뭔지 쉽게 설명 (2~3줄)
-- 실제로 어떻게 쓰는지 단계별 가이드 (5~7단계)
-- 막히는 포인트 + 해결법
-- 실제 활용 예시
+- 실제로 어떻게 쓰는지 단계별 가이드 (정확히 5단계만 — 5개 카드로 작성)
+- 막히는 포인트 + 해결법 (정확히 3가지)
+- 실제 활용 예시 (정확히 3가지)
 
 ### 파트 3: 마무리
-오늘 소식 한 줄 정리 + 내일 예고 (예: "내일은 ~~~를 자세히 다뤄볼게요!")
+오늘 소식 한 줄 정리 + 내일 예고
 
 분량: 전체 2500~3000자
 """
@@ -403,10 +456,10 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 ## 툴 트랙 글 구조 ({tool})
 
 1. 공감 도입 — 이런 상황에 딱!
-2. {tool} 최신 업데이트 핵심 변경사항
-3. 단계별 실전 가이드 (5~7단계, 스크린샷 설명하듯 구체적으로)
-4. 실제 결과물 예시
-5. 자주 막히는 포인트 + 해결법
+2. {tool} 최신 업데이트 핵심 변경사항 (정확히 3가지만 — 3개로 제한)
+3. 단계별 실전 가이드 (정확히 6단계 — 6개 카드로 작성)
+4. 실제 결과물 예시 (정확히 2가지)
+5. 자주 막히는 포인트 + 해결법 (정확히 3가지)
 6. 마무리 + 다음 편 예고
 
 분량: 2500~3000자
@@ -417,42 +470,17 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 ## 교육 트랙 글 구조
 
 1. 공감 도입
-2. 필요한 도구 + 준비물
-3. 단계별 실전 방법 (최대한 구체적으로)
-4. 실제 활용 예시
-5. 주의사항 + 흔한 실수
+2. 필요한 도구 + 준비물 (정확히 3가지 이내)
+3. 단계별 실전 방법 (정확히 5단계 — 5개 카드로 작성)
+4. 실제 활용 예시 (정확히 3가지)
+5. 주의사항 + 흔한 실수 (정확히 3가지)
 6. 마무리 + 다음 글 예고
 
 분량: 2500~3000자
 """
 
-    # 1단계: 메타데이터
-    log.info("  📋 1단계: 메타데이터 생성 중...")
-    meta_prompt = f"""
-{base_rules}
-
-수집된 최신 정보:
-{deep_news if deep_news else f"{topic} 관련 {year}년 최신 정보"}
-
-JSON만 출력 (코드블록/HTML 절대 금지):
-{{
-  "title_candidates": [
-    "SEO 제목 1 ({year})",
-    "SEO 제목 2 ({year})",
-    "SEO 제목 3 ({year})",
-    "SEO 제목 4 ({year})",
-    "SEO 제목 5 ({year})"
-  ],
-  "meta_description": "구글 클릭률 높은 메타설명 150자 이내",
-  "tags": ["태그1", "태그2", "태그3"],
-  "slug": "seo-english-slug-{year}"
-}}
-"""
-    meta_data = call_claude(meta_prompt, max_tokens=800)
-    log.info("  ✅ 메타데이터 생성 완료")
-
-    # 2단계: HTML 본문
-    log.info("  ✍️  2단계: HTML 본문 생성 중...")
+    # ── [v6.1] 1단계: HTML 본문 먼저 생성 ──────────────────────────────────
+    log.info("  ✍️  1단계: HTML 본문 생성 중...")
     html_prompt = f"""
 {base_rules}
 {structure}
@@ -493,8 +521,46 @@ JSON만 출력 (코드블록/HTML 절대 금지):
         content_html = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
 
     content_html = clean_markdown(content_html)
+    log.info(f"  ✅ HTML 본문 생성 완료 ({len(content_html)}자)")
+
+    # ── [v6.1] 2단계: 본문 기반으로 메타데이터(제목) 생성 ──────────────────
+    log.info("  📋 2단계: 본문 기반 메타데이터 생성 중...")
+    meta_prompt = f"""
+아래 블로그 본문을 읽고 메타데이터를 생성해줘.
+
+## 블로그 본문 (HTML):
+{content_html[:3000]}  ← 본문 앞부분 참고
+
+## SEO 제목 규칙
+- 형식: [핵심 키워드] + [구체적 방법/결과] + [{year}]
+- ⚠️ 숫자가 들어간다면 반드시 본문에서 실제로 다루는 개수와 일치해야 함
+  - 단계(Step) 카드 개수, 팁 개수, 방법 개수 등을 직접 세서 반영
+  - 없는 숫자 넣기 금지
+- 클릭베이트 절대 금지 ("충격!", "경악!", "혁명!", "드디어" 등)
+- 본문에서 실제로 다루는 내용만 제목에 포함
+
+## 태그 규칙
+- 총 3~5개만
+- 필수 1~2개: Claude, 바이브코딩, AI코딩, 앱개발, AI자동화, AI에이전트, 초보자가이드
+- 선택 (핵심 주제일 때만): GitHub, Cursor, Windsurf, Lovable, Perplexity, Gemini, OpenAI
+
+JSON만 출력 (코드블록 없이):
+{{
+  "title_candidates": [
+    "본문 내용에 정확히 부합하는 SEO 제목 1 ({year})",
+    "본문 내용에 정확히 부합하는 SEO 제목 2 ({year})",
+    "본문 내용에 정확히 부합하는 SEO 제목 3 ({year})",
+    "본문 내용에 정확히 부합하는 SEO 제목 4 ({year})",
+    "본문 내용에 정확히 부합하는 SEO 제목 5 ({year})"
+  ],
+  "meta_description": "구글 클릭률 높은 메타설명 150자 이내",
+  "tags": ["태그1", "태그2", "태그3"],
+  "slug": "seo-english-slug-{year}"
+}}
+"""
+    meta_data = call_claude(meta_prompt, max_tokens=800)
     meta_data["content_html"] = content_html
-    log.info(f"  ✅ 블로그 글 생성 완료 (본문 {len(content_html)}자)")
+    log.info("  ✅ 메타데이터 생성 완료")
     return meta_data
 
 
@@ -512,7 +578,7 @@ def select_best_title(post_data: dict) -> str:
         messages=[{
             "role": "user",
             "content": f"""다음 제목 후보 중 SEO에 가장 좋은 제목 1개만 출력 (번호 없이).
-기준: 핵심 키워드 앞배치, 숫자 포함, 클릭베이트 없음, 자연스러운 표현
+기준: 핵심 키워드 앞배치, 숫자가 있다면 본문 실제 내용과 일치, 클릭베이트 없음, 자연스러운 표현
 
 후보:
 {candidates}""",
@@ -520,6 +586,63 @@ def select_best_title(post_data: dict) -> str:
     )
     title = response.content[0].text.strip()
     log.info(f"  ✅ 선택된 제목: {title}")
+    return title
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STEP 4-B: [NEW v6.2] 제목-내용 일치 검증 및 자동 수정
+# ═════════════════════════════════════════════════════════════════════════════
+def verify_title_content_match(title: str, content_html: str) -> str:
+    """
+    제목과 본문 내용의 일치 여부를 Claude로 검증.
+    불일치(특히 숫자/키워드)가 발견되면 본문에 맞는 제목으로 자동 교체.
+    최대 2회 재시도 후 그래도 안 되면 원본 제목 반환.
+    """
+    log.info("🔎 제목-내용 일치 검증 중...")
+
+    year = datetime.now().year
+    # 본문 전체가 너무 길 수 있으니 앞 4000자만 전달
+    content_preview = content_html[:4000]
+
+    for attempt in range(2):
+        verify_prompt = f"""
+아래 블로그 제목과 본문을 검토하고, 불일치가 있으면 수정된 제목을 반환해줘.
+
+## 현재 제목
+{title}
+
+## 본문 앞부분 (HTML)
+{content_preview}
+
+## 검증 기준
+1. 숫자 일치: 제목에 "N가지", "N단계", "N개" 같은 숫자가 있다면,
+   본문에서 실제로 그 개수만큼 항목이 있는지 세어봐.
+   - 번호 카드(①②③ 또는 숫자 원형 아이콘)의 실제 개수를 직접 세어볼 것.
+   - 제목 숫자 ≠ 본문 실제 개수이면 → 불일치
+2. 핵심 키워드 일치: 제목에 언급된 도구명/기능명이 본문에서 실제로 다뤄지는지 확인.
+3. 과장 표현 금지: 본문에 없는 내용을 제목이 암시하면 → 불일치
+
+## 출력 형식 (JSON, 코드블록 없이)
+일치하면:
+{{"status": "ok", "title": "{title}"}}
+
+불일치이면:
+{{"status": "fixed", "title": "본문 내용에 정확히 부합하는 수정된 제목 ({year})", "reason": "수정 이유 한 줄"}}
+"""
+        result = call_claude(verify_prompt, max_tokens=300)
+        status = result.get("status", "ok")
+        new_title = result.get("title", title).strip()
+
+        if status == "ok":
+            log.info("  ✅ 검증 통과 — 제목과 내용 일치")
+            return new_title
+        else:
+            reason = result.get("reason", "")
+            log.warning(f"  ⚠️ 불일치 감지 (시도 {attempt+1}/2): {reason}")
+            log.info(f"  🔧 제목 수정: {title} → {new_title}")
+            title = new_title  # 수정된 제목으로 다음 검증 진행
+
+    log.info(f"  ✅ 최종 제목 확정: {title}")
     return title
 
 
@@ -571,7 +694,33 @@ def generate_thumbnail(image_prompt: str) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 6: Blogger 포스팅
+# STEP 6: 이미지 업로드
+# ═════════════════════════════════════════════════════════════════════════════
+def upload_image_to_imgur(image_b64: str) -> str:
+    if not image_b64:
+        return ""
+    try:
+        log.info("☁️  이미지 imgur 업로드 중...")
+        resp = requests.post(
+            "https://api.imgur.com/3/image",
+            headers={"Authorization": "Client-ID 546c25a59c58ad7"},
+            data={"image": image_b64, "type": "base64"},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("success"):
+            img_url = data["data"]["link"]
+            log.info(f"  ✅ imgur 업로드 완료: {img_url}")
+            return img_url
+        return ""
+    except Exception as e:
+        log.warning(f"  ⚠️ imgur 업로드 실패 ({e})")
+        return ""
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STEP 7: Blogger 포스팅
 # ═════════════════════════════════════════════════════════════════════════════
 def get_blogger_service():
     creds_info = json.loads(GOOGLE_CREDENTIALS)
@@ -601,7 +750,7 @@ def post_to_blogger(title: str, post_data: dict, image_url: str) -> str:
 <hr style="margin:3rem 0;border:none;border-top:1px solid #eee;" />
 <div style="background:#f0f4ff;padding:1.5rem;border-radius:8px;margin-top:2rem;">
   <p style="margin:0;font-size:0.9rem;color:#555;">
-    📌 <strong>바이브코딩 스쿨</strong>은 코딩 몰라도 AI로 앱을 만들 수 있도록
+    📌 <strong>바이브코딩 스쿨</strong>은 코딩 없이도 AI로 앱을 만들 수 있도록
     매일 아침·저녁 최신 내용을 업데이트합니다. 구독하고 놓치지 마세요! 🔔
   </p>
 </div>
@@ -626,7 +775,7 @@ def post_to_blogger(title: str, post_data: dict, image_url: str) -> str:
 # ═════════════════════════════════════════════════════════════════════════════
 def main():
     log.info("=" * 60)
-    log.info("🚀 바이브코딩 스쿨 자동화 시작 (v6.0)")
+    log.info("🚀 바이브코딩 스쿨 자동화 시작 (v6.2)")
     log.info(f"   날짜: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     log.info("=" * 60)
 
@@ -634,10 +783,23 @@ def main():
         track, tool_name = get_track()
         log.info(f"  📌 트랙: {track.upper()}")
 
-        topic_data   = decide_topic(track, tool_name)
+        # [v6.1] 중복 방지 컨텍스트 준비
+        log.info("📋 중복 방지 히스토리 로드 중...")
+        history         = load_history()
+        blogger_titles  = get_blogger_recent_titles(max_results=20)
+        avoid_context   = build_avoid_context(history, blogger_titles)
+        log.info(f"  ✅ 히스토리 {len(history['posts'])}개 + Blogger 제목 {len(blogger_titles)}개 로드")
+
+        # 주제 결정 (중복 방지 컨텍스트 전달)
+        topic_data   = decide_topic(track, avoid_context, tool_name)
         deep_news    = collect_deep_news(topic_data)
+
+        # [v6.1] 본문 먼저 → 제목 나중
         post_data    = generate_post(track, topic_data, deep_news)
         best_title   = select_best_title(post_data)
+
+        # [v6.2] 제목-내용 일치 검증 및 자동 수정
+        best_title   = verify_title_content_match(best_title, post_data["content_html"])
 
         image_prompt = generate_image_prompt(best_title, post_data)
         image_b64    = generate_thumbnail(image_prompt)
@@ -645,6 +807,17 @@ def main():
 
         blog_url = post_to_blogger(best_title, post_data, image_url)
 
+        # [v6.1] 히스토리에 기록
+        add_to_history(
+            history,
+            title=best_title,
+            topic=topic_data["topic"],
+            tool=topic_data.get("tool") or topic_data.get("todays_pick_tool", ""),
+            track=track,
+        )
+        log.info("  ✅ 히스토리 업데이트 완료")
+
+        # 추가 채널 포스팅 (인스타, 유튜브, Threads)
         card_image_urls = []
         try:
             from instagram import post_instagram
@@ -688,6 +861,7 @@ def main():
         log.info("=" * 60)
         log.info("🎉 전체 파이프라인 완료!")
         log.info(f"   트랙: {track.upper()} | 주제: {topic_data['topic']}")
+        log.info(f"   제목: {best_title}")
         log.info(f"   블로그 URL: {blog_url}")
         log.info("=" * 60)
 
