@@ -1,14 +1,9 @@
 """
-바이브코딩 스쿨 — YouTube Shorts 자동화 v3
+바이브코딩 스쿨 — YouTube Shorts 자동화 v3.1
 ─────────────────────────────────────────
-구조:
-  [인트로]  logo2.png + 인사말 음성
-  [카드 5장] 카드별 Gemini 이미지 + 텍스트 오버레이 + 음성
-  [아웃트로] logo.png + CTA 음성
-
-이미지: 카드별 주제에 맞는 Gemini 생성 이미지 (9:16)
-자막: 이미지 위 텍스트 오버레이
-음성: Gemini TTS - Charon
+v3.1 변경사항:
+  - Gemini TTS (유료) → Google Cloud TTS (월 100만자 무료) 교체
+  - 한국어 WaveNet 음성 사용 (ko-KR-Wavenet-A)
 """
 
 import os
@@ -32,8 +27,8 @@ import anthropic
 
 log = logging.getLogger(__name__)
 
-ANTHROPIC_API_KEY  = os.environ["ANTHROPIC_API_KEY"]
-GEMINI_API_KEY     = os.environ["GEMINI_API_KEY"]
+ANTHROPIC_API_KEY     = os.environ["ANTHROPIC_API_KEY"]
+GEMINI_API_KEY        = os.environ["GEMINI_API_KEY"]
 GOOGLE_CREDENTIALS    = os.environ["GOOGLE_CREDENTIALS_JSON"]
 INSTAGRAM_TOKEN       = os.environ.get("INSTAGRAM_ACCESS_TOKEN", "")
 INSTAGRAM_ACCOUNT_ID  = os.environ.get("INSTAGRAM_ACCOUNT_ID", "")
@@ -129,10 +124,7 @@ def generate_card_scripts(title: str, content_html: str, blog_url: str, num_card
 - 정보가 구체적이고 실용적이어야 함
 - 블로그에 명시된 수치만 사용, 없는 내용 창작 금지
 - 말하듯이 자연스럽게 써주세요. 문어체 금지!
-  나쁜 예) Claude Max는 기존 Pro 대비 5~20배 사용량을 제공합니다
-  좋은 예) Claude Max 쓰면 Pro보다 최대 20배 더 쓸 수 있어요
 - 짧고 끊어서 써주세요. 한 문장에 정보 하나만!
-- 감탄사 활용: "진짜예요", "대박이죠?", "놀랍지 않나요?" 자연스럽게
 
 ## 이미지 프롬프트 원칙
 - 각 카드 내용을 시각적으로 표현하는 장면
@@ -214,9 +206,6 @@ def generate_card_image(image_prompt: str, card_num: int) -> bytes:
 # STEP 3: 이미지 위에 텍스트 오버레이
 # ═════════════════════════════════════════════════════════════════════════════
 def make_card_frame(image_bytes: bytes, title: str, subtitle: str) -> bytes:
-    """Gemini 이미지 위에 제목 + 자막 오버레이"""
-
-    # 이미지 로드 및 1080x1920으로 리사이즈
     bio = BytesIO(bytes(image_bytes))
     bio.seek(0)
     img = Image.open(bio)
@@ -225,14 +214,12 @@ def make_card_frame(image_bytes: bytes, title: str, subtitle: str) -> bytes:
     img = img.resize((W, H), Image.LANCZOS)
     draw = ImageDraw.Draw(img)
 
-    # ── 상단 로고 바 ──
     top_overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     top_draw = ImageDraw.Draw(top_overlay)
     top_draw.rectangle([0, 0, W, 130], fill=(0, 0, 0, 160))
     img = Image.alpha_composite(img.convert("RGBA"), top_overlay).convert("RGB")
     draw = ImageDraw.Draw(img)
 
-    # 로고 (상단 작게)
     if os.path.exists(LOGO_PATH):
         try:
             logo = Image.open(LOGO_PATH).convert("RGBA")
@@ -246,14 +233,10 @@ def make_card_frame(image_bytes: bytes, title: str, subtitle: str) -> bytes:
             draw.text((W//2, 65), "바이브코딩 스쿨", font=font_brand, fill=(255,255,255), anchor="mm")
     draw = ImageDraw.Draw(img)
 
-    # ── 중앙 제목 (큰 텍스트) ──
     if title:
         font_title = load_font(90, bold=True)
-        # 반투명 배경
         title_overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         title_draw = ImageDraw.Draw(title_overlay)
-
-        # 제목 줄바꿈
         words = title.split()
         lines, current = [], ""
         for word in words:
@@ -266,38 +249,28 @@ def make_card_frame(image_bytes: bytes, title: str, subtitle: str) -> bytes:
                 current = test
         if current:
             lines.append(current)
-
-        # 제목 배경 박스
         line_h = 100
         box_h = len(lines) * line_h + 40
         box_y = H // 2 - box_h // 2
         title_draw.rectangle([40, box_y - 20, W - 40, box_y + box_h], fill=(0, 0, 0, 150))
         img = Image.alpha_composite(img.convert("RGBA"), title_overlay).convert("RGB")
         draw = ImageDraw.Draw(img)
-
-        # 제목 텍스트
         y = box_y + 10
         for line in lines:
             bbox = draw.textbbox((0, 0), line, font=font_title)
             x = (W - (bbox[2] - bbox[0])) // 2
-            # 외곽선
             for dx, dy in [(-3,-3),(3,-3),(-3,3),(3,3)]:
                 draw.text((x+dx, y+dy), line, font=font_title, fill=(0,0,0))
             draw.text((x, y), line, font=font_title, fill=(255, 255, 255))
             y += line_h
 
-    # ── 하단 자막 ──
     if subtitle:
         font_sub = load_font(48, bold=True)
-
-        # 하단 반투명 배경
         sub_overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         sub_draw = ImageDraw.Draw(sub_overlay)
         sub_draw.rectangle([0, H - 340, W, H], fill=(0, 0, 0, 200))
         img = Image.alpha_composite(img.convert("RGBA"), sub_overlay).convert("RGB")
         draw = ImageDraw.Draw(img)
-
-        # 자막 줄바꿈
         words = subtitle.split()
         lines, current = [], ""
         for word in words:
@@ -310,8 +283,6 @@ def make_card_frame(image_bytes: bytes, title: str, subtitle: str) -> bytes:
                 current = test
         if current:
             lines.append(current)
-
-        # 자막 그리기 (노란색)
         y = H - 320
         for line in lines[:2]:
             bbox = draw.textbbox((0, 0), line, font=font_sub)
@@ -330,7 +301,6 @@ def make_card_frame(image_bytes: bytes, title: str, subtitle: str) -> bytes:
 # STEP 4: 인트로/아웃트로 프레임 생성
 # ═════════════════════════════════════════════════════════════════════════════
 def make_intro_frame() -> bytes:
-    """logo2.png 사용 인트로"""
     img = Image.new("RGB", (W, H), color=(10, 10, 20))
     draw = ImageDraw.Draw(img)
     for y in range(H):
@@ -356,7 +326,6 @@ def make_intro_frame() -> bytes:
 
 
 def make_outro_frame() -> bytes:
-    """logo.png 사용 아웃트로"""
     img = Image.new("RGB", (W, H), color=(10, 10, 20))
     draw = ImageDraw.Draw(img)
     for y in range(H):
@@ -381,49 +350,64 @@ def make_outro_frame() -> bytes:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 5: Gemini TTS 음성 생성
+# STEP 5: Google Cloud TTS 음성 생성 (무료 월 100만자)
+# [v3.1] Gemini TTS (유료) → Google Cloud TTS (무료) 교체
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_voice(script: str) -> bytes:
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.5-flash-preview-tts:generateContent?key={GEMINI_API_KEY}"
-    )
-    # 자연스러운 말투로 읽도록 스타일 지시 추가
-    styled_script = f"다음 내용을 친근하고 자연스러운 말투로 읽어주세요. 너무 딱딱하지 않게, 대화하듯이 읽어주세요:\n\n{script}"
+    """Google Cloud TTS로 한국어 음성 생성 (월 100만자 무료)"""
+    import google.auth.transport.requests as google_requests
+    from google.oauth2.credentials import Credentials as OAuth2Credentials
 
-    payload = {
-        "contents": [{"parts": [{"text": styled_script}]}],
-        "generationConfig": {
-            "responseModalities": ["AUDIO"],
-            "speechConfig": {
-                "voiceConfig": {
-                    "prebuiltVoiceConfig": {"voiceName": "Charon"}
-                }
-            }
-        }
+    # 서비스 계정 대신 기존 OAuth 크레덴셜 재사용
+    creds_info = json.loads(GOOGLE_CREDENTIALS)
+    creds = OAuth2Credentials(
+        token=creds_info["token"],
+        refresh_token=creds_info["refresh_token"],
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=creds_info["client_id"],
+        client_secret=creds_info["client_secret"],
+        scopes=["https://www.googleapis.com/auth/cloud-platform"],
+    )
+    if not creds.valid:
+        creds.refresh(google_requests.Request())
+
+    url = "https://texttospeech.googleapis.com/v1/text:synthesize"
+    headers = {
+        "Authorization": f"Bearer {creds.token}",
+        "Content-Type": "application/json",
     }
+    payload = {
+        "input": {"text": script},
+        "voice": {
+            "languageCode": "ko-KR",
+            "name": "ko-KR-Wavenet-A",   # 자연스러운 한국어 여성 음성
+            "ssmlGender": "FEMALE",
+        },
+        "audioConfig": {
+            "audioEncoding": "LINEAR16",  # WAV 형식 (ffmpeg 호환)
+            "speakingRate": 1.1,          # 약간 빠르게 (쇼츠용)
+            "pitch": 1.0,
+            "sampleRateHertz": 24000,
+        },
+    }
+
     for attempt in range(3):
         try:
-            resp = requests.post(url, json=payload, timeout=60)
+            resp = requests.post(url, headers=headers, json=payload, timeout=30)
             resp.raise_for_status()
-            data = resp.json()
-            audio_b64 = data["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
+            audio_b64 = resp.json()["audioContent"]
             return base64.b64decode(audio_b64)
         except Exception as e:
-            wait = 30 * (attempt + 1)
-            log.warning(f"  ⚠️ 음성 생성 실패 (시도 {attempt+1}/3): {e}")
+            wait = 10 * (attempt + 1)
+            log.warning(f"  ⚠️ TTS 실패 (시도 {attempt+1}/3): {e}")
             time.sleep(wait)
-    raise RuntimeError("음성 생성 3회 모두 실패")
+
+    raise RuntimeError("Google Cloud TTS 3회 모두 실패")
 
 
 def save_voice_as_wav(audio_bytes: bytes, path: Path) -> Path:
-    raw_path = path.parent / (path.stem + ".raw")
-    raw_path.write_bytes(audio_bytes)
-    wav_cmd = ["ffmpeg", "-y", "-f", "s16le", "-ar", "24000", "-ac", "1",
-               "-i", str(raw_path), str(path)]
-    result = subprocess.run(wav_cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        return raw_path
+    """Cloud TTS는 LINEAR16(WAV)으로 직접 반환 — 바로 저장"""
+    path.write_bytes(audio_bytes)
     return path
 
 
@@ -444,7 +428,6 @@ def get_audio_duration(audio_path: Path) -> float:
 
 
 def make_video_segment(img_path: Path, audio_path: Path, output_path: Path):
-    """이미지 + 음성 → 영상 (음성 길이에 맞춤)"""
     duration = get_audio_duration(audio_path) + 0.3
     subprocess.run([
         "ffmpeg", "-y",
@@ -470,59 +453,43 @@ def create_shorts_video(card_scripts: list, title: str) -> str:
         tmpdir = Path(tmpdir)
         segments = []
 
-        # ── 인트로 ──
         log.info("  🎬 인트로 생성 중...")
         intro_img_path = tmpdir / "intro.png"
         intro_img_path.write_bytes(make_intro_frame())
-        intro_audio_path = save_voice_as_wav(
-            generate_voice(INTRO_SCRIPT), tmpdir / "intro_audio.wav"
-        )
+        intro_audio_bytes = generate_voice(INTRO_SCRIPT)
+        intro_audio_path = save_voice_as_wav(intro_audio_bytes, tmpdir / "intro_audio.wav")
         intro_video = tmpdir / "intro.mp4"
         make_video_segment(intro_img_path, intro_audio_path, intro_video)
         segments.append(intro_video)
 
-        # ── 카드 5장 ──
         for i, card_data in enumerate(card_scripts):
             log.info(f"  🎬 카드 {i+1} 세그먼트 생성 중...")
-
-            # Gemini 이미지 생성
             image_bytes = generate_card_image(
                 card_data.get("image_prompt", f"AI coding tech illustration card {i+1}"),
                 i + 1
             )
-
-            # 텍스트 오버레이
             card_frame = make_card_frame(
                 image_bytes,
                 card_data.get("title", ""),
                 card_data.get("script", "")
             )
-
             card_img_path = tmpdir / f"card_{i}.png"
             card_img_path.write_bytes(card_frame)
-
-            # 음성
-            card_audio_path = save_voice_as_wav(
-                generate_voice(card_data.get("script", "")),
-                tmpdir / f"card_{i}_audio.wav"
-            )
-
+            card_audio_bytes = generate_voice(card_data.get("script", ""))
+            card_audio_path = save_voice_as_wav(card_audio_bytes, tmpdir / f"card_{i}_audio.wav")
             card_video = tmpdir / f"card_{i}.mp4"
             make_video_segment(card_img_path, card_audio_path, card_video)
             segments.append(card_video)
 
-        # ── 아웃트로 ──
         log.info("  🎬 아웃트로 생성 중...")
         outro_img_path = tmpdir / "outro.png"
         outro_img_path.write_bytes(make_outro_frame())
-        outro_audio_path = save_voice_as_wav(
-            generate_voice(OUTRO_SCRIPT), tmpdir / "outro_audio.wav"
-        )
+        outro_audio_bytes = generate_voice(OUTRO_SCRIPT)
+        outro_audio_path = save_voice_as_wav(outro_audio_bytes, tmpdir / "outro_audio.wav")
         outro_video = tmpdir / "outro.mp4"
         make_video_segment(outro_img_path, outro_audio_path, outro_video)
         segments.append(outro_video)
 
-        # ── 합치기 ──
         log.info("  🔗 세그먼트 합치는 중...")
         concat_list = tmpdir / "concat.txt"
         with open(concat_list, "w") as f:
@@ -546,21 +513,17 @@ def create_shorts_video(card_scripts: list, title: str) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 7-1: Cloudinary에 영상 업로드 (인스타 릴스용 공개 URL 필요)
+# STEP 7-1: Cloudinary 업로드
 # ═════════════════════════════════════════════════════════════════════════════
 def upload_video_to_cloudinary(video_path: str) -> str:
     log.info("☁️  Cloudinary 영상 업로드 중...")
     import hashlib
-
     timestamp = str(int(time.time()))
     public_id = "vibe_school/reels_" + timestamp
-
-    # 서명 생성 (파라미터 알파벳 순서 중요)
     params_to_sign = "public_id=" + public_id + "&timestamp=" + timestamp
     signature = hashlib.sha1(
         (params_to_sign + CLOUDINARY_API_SECRET).encode("utf-8")
     ).hexdigest()
-
     with open(video_path, "rb") as f:
         resp = requests.post(
             "https://api.cloudinary.com/v1_1/" + CLOUDINARY_CLOUD_NAME + "/video/upload",
@@ -573,12 +536,9 @@ def upload_video_to_cloudinary(video_path: str) -> str:
             files={"file": ("video.mp4", f, "video/mp4")},
             timeout=180,
         )
-
-    if not resp.ok:
-        log.warning(f"  ⚠️ Cloudinary 응답: {resp.text[:200]}")
     resp.raise_for_status()
     url = resp.json().get("secure_url", "")
-    log.info(f"  ✅ Cloudinary 영상 업로드 완료: {url[:60]}...")
+    log.info(f"  ✅ Cloudinary 업로드 완료: {url[:60]}...")
     return url
 
 
@@ -587,15 +547,11 @@ def upload_video_to_cloudinary(video_path: str) -> str:
 # ═════════════════════════════════════════════════════════════════════════════
 def upload_to_instagram_reels(video_url: str, title: str, blog_url: str) -> str:
     log.info("📱 인스타그램 릴스 업로드 중...")
-
     if not INSTAGRAM_TOKEN or not INSTAGRAM_ACCOUNT_ID:
         log.warning("  ⚠️ 인스타그램 토큰/계정 없음 → 릴스 스킵")
         return ""
-
     base = "https://graph.instagram.com/v25.0"
     caption = title + "\n\n블로그에서 더 보기: " + blog_url + "\n\n#바이브코딩 #AI코딩 #Shorts #바이브코딩스쿨"
-
-    # 1. 미디어 컨테이너 생성
     for attempt in range(3):
         resp = requests.post(
             f"{base}/{INSTAGRAM_ACCOUNT_ID}/media",
@@ -614,45 +570,32 @@ def upload_to_instagram_reels(video_url: str, title: str, blog_url: str) -> str:
         time.sleep(30)
     resp.raise_for_status()
     container_id = resp.json()["id"]
-    log.info(f"  📦 릴스 컨테이너 생성 완료: {container_id}")
-
-    # 2. 처리 대기 (인스타가 영상 처리하는 시간)
-    log.info("  ⏳ 인스타 영상 처리 대기 중... (30초)")
+    log.info(f"  ⏳ 인스타 영상 처리 대기 중... (30초)")
     time.sleep(30)
-
-    # 3. 게시
     for attempt in range(3):
         resp = requests.post(
             f"{base}/{INSTAGRAM_ACCOUNT_ID}/media_publish",
-            json={
-                "creation_id": container_id,
-                "access_token": INSTAGRAM_TOKEN,
-            },
+            json={"creation_id": container_id, "access_token": INSTAGRAM_TOKEN},
             timeout=30,
         )
         if resp.ok:
             break
-        log.warning(f"  ⚠️ 릴스 게시 실패 (시도 {attempt+1}/3): {resp.text[:100]}")
         time.sleep(30)
     resp.raise_for_status()
-
     post_id = resp.json()["id"]
     reels_url = f"https://www.instagram.com/reel/{post_id}/"
-    log.info(f"  ✅ 인스타 릴스 업로드 완료: {reels_url}")
+    log.info(f"  ✅ 인스타 릴스 완료: {reels_url}")
     return reels_url
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 7: 유튜브 업로드
+# STEP 7-3: 유튜브 업로드
 # ═════════════════════════════════════════════════════════════════════════════
 def upload_to_youtube(video_path: str, meta: dict) -> str:
     log.info("📤 유튜브 업로드 중...")
-
     import google.auth.transport.requests as google_requests
-    from google.oauth2.credentials import Credentials as OAuth2Credentials
-
     creds_info = json.loads(GOOGLE_CREDENTIALS)
-    creds = OAuth2Credentials(
+    creds = Credentials(
         token=creds_info["token"],
         refresh_token=creds_info["refresh_token"],
         token_uri="https://oauth2.googleapis.com/token",
@@ -662,9 +605,7 @@ def upload_to_youtube(video_path: str, meta: dict) -> str:
     )
     if not creds.valid:
         creds.refresh(google_requests.Request())
-
     youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
-
     body = {
         "snippet": {
             "title": meta["youtube_title"],
@@ -673,64 +614,45 @@ def upload_to_youtube(video_path: str, meta: dict) -> str:
             "categoryId": "28",
             "defaultLanguage": "ko",
         },
-        "status": {
-            "privacyStatus": "public",
-            "selfDeclaredMadeForKids": False,
-        }
+        "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}
     }
-
     media = MediaFileUpload(video_path, mimetype="video/mp4", resumable=True, chunksize=1024*1024)
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
-
     response = None
     while response is None:
         status, response = request.next_chunk()
         if status:
             log.info(f"  📊 업로드 진행률: {int(status.progress() * 100)}%")
-
     video_id = response["id"]
     youtube_url = f"https://www.youtube.com/shorts/{video_id}"
     log.info(f"  ✅ 유튜브 업로드 완료: {youtube_url}")
-
     os.remove(video_path)
     return youtube_url
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 메인 함수 — main.py에서 호출
+# 메인 함수
 # ═════════════════════════════════════════════════════════════════════════════
 def post_youtube_shorts(
     title: str,
     content_html: str,
     blog_url: str,
-    card_image_urls: list = None  # 더 이상 사용 안 함 (Gemini로 자체 생성)
+    card_image_urls: list = None,
 ) -> str:
     try:
-        # 1. 카드별 스크립트 + 이미지 프롬프트 생성
         meta = generate_card_scripts(title, content_html, blog_url)
         card_scripts = meta.get("cards", [])
-
-        # 2. 영상 합성
         video_path = create_shorts_video(card_scripts, title)
-
-        # 3. Cloudinary 업로드 (인스타 릴스용)
         reels_url = ""
         try:
             video_public_url = upload_video_to_cloudinary(video_path)
-
-            # 4. 인스타 릴스 업로드
             reels_url = upload_to_instagram_reels(video_public_url, title, blog_url)
         except Exception as e:
-            log.warning(f"  ⚠️ 인스타 릴스 실패 (유튜브는 정상): {e}")
-
-        # 5. 유튜브 업로드
+            log.warning(f"  ⚠️ 인스타 릴스 실패: {e}")
         youtube_url = upload_to_youtube(video_path, meta)
-
         if reels_url:
             log.info(f"  📱 인스타 릴스: {reels_url}")
-
         return youtube_url
-
     except Exception as e:
         log.warning(f"  ⚠️ 유튜브 쇼츠 실패 (블로그는 정상): {e}")
         return ""
