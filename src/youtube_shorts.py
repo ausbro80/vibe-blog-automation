@@ -5,6 +5,8 @@ v3.2 변경사항:
   - Gemini TTS (유료) → Google Cloud TTS Chirp 3 HD (월 100만자 무료) 교체
   - 한국어 남성 음성 사용 (ko-KR-Chirp3-HD-Charon)
   - Chirp 3 HD 리전 엔드포인트 적용 (us-texttospeech)
+v3.3 변경사항:
+  - TTS OAuth → API 키 방식으로 변경 (401 오류 수정)
 """
 
 import os
@@ -31,6 +33,7 @@ log = logging.getLogger(__name__)
 ANTHROPIC_API_KEY     = os.environ["ANTHROPIC_API_KEY"]
 GEMINI_API_KEY        = os.environ["GEMINI_API_KEY"]
 GOOGLE_CREDENTIALS    = os.environ["GOOGLE_CREDENTIALS_JSON"]
+GOOGLE_TTS_API_KEY    = os.environ["GOOGLE_TTS_API_KEY"]  # ✅ API 키 방식
 INSTAGRAM_TOKEN       = os.environ.get("INSTAGRAM_ACCESS_TOKEN", "")
 INSTAGRAM_ACCOUNT_ID  = os.environ.get("INSTAGRAM_ACCOUNT_ID", "")
 CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
@@ -351,41 +354,23 @@ def make_outro_frame() -> bytes:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 5: Google Cloud TTS 음성 생성 (무료 월 100만자)
-# [v3.1] Gemini TTS (유료) → Google Cloud TTS (무료) 교체
+# STEP 5: Google Cloud TTS 음성 생성 (API 키 방식 ✅)
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_voice(script: str) -> bytes:
-    """Google Cloud TTS Chirp 3 HD로 한국어 남성 음성 생성 (월 100만자 무료)"""
-    import google.auth.transport.requests as google_requests
-    from google.oauth2.credentials import Credentials as OAuth2Credentials
+    """Google Cloud TTS Chirp 3 HD — API 키 방식 (401 오류 수정)"""
 
-    creds_info = json.loads(GOOGLE_CREDENTIALS)
-    creds = OAuth2Credentials(
-        token=creds_info["token"],
-        refresh_token=creds_info["refresh_token"],
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=creds_info["client_id"],
-        client_secret=creds_info["client_secret"],
-        scopes=["https://www.googleapis.com/auth/cloud-platform"],
-    )
-    if not creds.valid:
-        creds.refresh(google_requests.Request())
-
-    # Chirp 3 HD는 리전 엔드포인트 필요
-    url = "https://us-texttospeech.googleapis.com/v1beta1/text:synthesize"
-    headers = {
-        "Authorization": f"Bearer {creds.token}",
-        "Content-Type": "application/json",
-    }
+    # ✅ OAuth 대신 API 키 방식으로 변경
+    url = f"https://us-texttospeech.googleapis.com/v1beta1/text:synthesize?key={GOOGLE_TTS_API_KEY}"
+    headers = {"Content-Type": "application/json"}
     payload = {
         "input": {"text": script},
         "voice": {
             "languageCode": "ko-KR",
-            "name": "ko-KR-Chirp3-HD-Charon",  # 자연스러운 한국어 남성 음성
+            "name": "ko-KR-Chirp3-HD-Charon",
         },
         "audioConfig": {
             "audioEncoding": "LINEAR16",
-            "speakingRate": 1.1,   # 약간 빠르게 (쇼츠용)
+            "speakingRate": 1.1,
             "sampleRateHertz": 24000,
         },
     }
@@ -405,7 +390,6 @@ def generate_voice(script: str) -> bytes:
 
 
 def save_voice_as_wav(audio_bytes: bytes, path: Path) -> Path:
-    """Cloud TTS는 LINEAR16(WAV)으로 직접 반환 — 바로 저장"""
     path.write_bytes(audio_bytes)
     return path
 
