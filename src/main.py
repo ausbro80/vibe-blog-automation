@@ -1,26 +1,20 @@
 """
-바이브코딩 스쿨 (VIBE CODING School) — Blog Automation v6.5.0
+바이브코딩 스쿨 (VIBE CODING School) — Blog Automation v6.6.0
 ──────────────────────────────────────────────────────────
+v6.6.0 수정사항:
+  - [버그 수정] get_blocked_tools() UPDATE_KEYWORDS 예외 로직 제거
+    → 업데이트/출시 소식이어도 차단 이력에 항상 포함
+    → "어제 출시 소식 다뤘으면 오늘도 같은 툴 출시 소식 올라와도 차단"
+    → AI 판단 단계에서 예외 허용 여부를 결정 (이력 자체는 항상 남김)
+  - [버그 수정] news 트랙 add_to_history() tool 필드 누락 방지
+    → todays_pick_tool 없으면 news_list 첫 번째 툴로 fallback
 v6.5.0 수정사항:
-  - [업데이트 예외] get_blocked_tools() 개선
-    → 같은 툴이라도 새 버전/출시/업데이트 소식이면 차단 이력으로 안 봄
-    → "어제 다뤘어도 오늘 major 업데이트 나왔으면 반드시 다뤄야 함" 원칙 반영
-    → UPDATE_KEYWORDS로 업데이트성 포스트 판별
+  - [업데이트 예외] get_blocked_tools() 개선 (→ v6.6.0에서 롤백)
   - [각도 차단] get_blocked_angles() 추가
-    → 최근 30일 내 같은 툴+각도 조합 이력 추적
-    → 활용법/설정/사용법 등 각도만 바꾼 반복 방지
 v6.4.0 수정사항:
   - [날짜 기반 차단] get_blocked_tools() 추가
-    → AI 판단 아닌 코드가 직접 날짜 계산
-    → 최근 5일 내 다룬 툴 차단 (업데이트 예외)
 v6.3.0 수정사항:
   - [영구 차단] PERMANENT_BLOCK 상단 고정
-    → decide_topic / generate_post / search 세 군데 모두 적용
-v6.2.1 수정사항:
-  - [연도 고정] 모든 단계에 현재 연도 명시 + 강제 복원 로직
-v6.2 수정사항:
-  - [중복 방지] Blogger API 최근 20개 제목 수집
-  - [제목-내용 일치] 본문 먼저 생성 → 제목 생성 → 검증
 """
 
 import os
@@ -54,30 +48,26 @@ claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 HISTORY_FILE = Path("posted_history.json")
 
 # ═════════════════════════════════════════════════════════════════════════════
-# ⛔ 영구 차단 키워드 — 식은 뉴스 / 서비스 종료된 툴
-#    주제 결정·본문 작성·검색 세 군데 모두 적용
+# ⛔ 영구 차단 키워드
 # ═════════════════════════════════════════════════════════════════════════════
 PERMANENT_BLOCK: list[str] = [
     "Sora", "소라",
-    # 필요 시 추가:
-    # "Devin", "Cognition",
 ]
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 날짜 기반 차단 설정
 # ═════════════════════════════════════════════════════════════════════════════
-TOOL_BLOCK_DAYS  = 5    # 같은 툴 재등장 금지 기간 (일) — 업데이트성 포스트 제외
-ANGLE_BLOCK_DAYS = 30   # 같은 툴+각도 조합 금지 기간 (일)
+TOOL_BLOCK_DAYS  = 5
+ANGLE_BLOCK_DAYS = 30
 
-# 업데이트성 키워드 — 제목에 포함 시 차단 이력으로 안 봄
-# (같은 툴이라도 새 소식이면 다뤄야 하므로)
+# ⚠️ v6.6.0: UPDATE_KEYWORDS는 프롬프트에서 AI 판단용으로만 사용
+# 이력 차단 로직에서는 제거됨 (중복 방지 우선)
 UPDATE_KEYWORDS: list[str] = [
     "업데이트", "출시", "새로운", "신규", "버전", "발표", "릴리즈", "개편",
     "v2", "v3", "v4", "2.0", "3.0", "4.0", "Pro", "Plus",
     "launch", "release", "update", "new", "feature", "announce",
 ]
 
-# 각도 키워드 — 제목에서 추출해 각도 중복 판단에 활용
 ANGLE_KEYWORDS: list[str] = [
     "활용법", "사용법", "설정", "가이드", "튜토리얼", "설치",
     "입문", "기초", "시작", "연동", "자동화", "워크플로우",
@@ -85,9 +75,7 @@ ANGLE_KEYWORDS: list[str] = [
 ]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 def _block_clause() -> str:
-    """PERMANENT_BLOCK 키워드를 프롬프트용 문자열로 변환"""
     if not PERMANENT_BLOCK:
         return ""
     kw = ", ".join(PERMANENT_BLOCK)
@@ -101,13 +89,16 @@ def _block_clause() -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 날짜 기반 툴/각도 차단 — AI 판단 없이 코드가 직접 계산
+# 날짜 기반 툴/각도 차단
 # ═════════════════════════════════════════════════════════════════════════════
 def get_blocked_tools(history: dict) -> dict[str, str]:
     """
     최근 TOOL_BLOCK_DAYS일 내 다룬 툴 반환.
-    단, 업데이트/출시/버전 관련 포스트는 차단 이력으로 보지 않음.
-    → 같은 툴이라도 새 소식이면 다뤄야 하기 때문.
+
+    ✅ v6.6.0 변경: 업데이트/출시 소식이어도 차단 이력에 항상 포함.
+    → "어제 출시 소식 다뤘으면 오늘 같은 툴 또 올려도 차단"
+    → AI 판단 단계에서만 '새 소식이면 예외' 허용. 이력 자체는 항상 남김.
+    → 이전 UPDATE_KEYWORDS 예외 로직이 연속 중복 포스팅의 원인이었음.
 
     반환값: {툴명(소문자): "마지막 포스팅 날짜 문자열"}
     """
@@ -119,14 +110,8 @@ def get_blocked_tools(history: dict) -> dict[str, str]:
         if post_date <= cutoff:
             continue
 
-        tool  = (p.get("tool") or "").strip()
-        title = p.get("title", "")
+        tool = (p.get("tool") or "").strip()
         if not tool:
-            continue
-
-        # 업데이트성 포스트였으면 차단 이력으로 안 봄
-        is_update_post = any(kw.lower() in title.lower() for kw in UPDATE_KEYWORDS)
-        if is_update_post:
             continue
 
         key = tool.lower()
@@ -137,10 +122,6 @@ def get_blocked_tools(history: dict) -> dict[str, str]:
 
 
 def get_blocked_angles(history: dict) -> list[dict]:
-    """
-    최근 ANGLE_BLOCK_DAYS일 내 같은 툴+각도 조합 반환.
-    반환값: [{"tool": ..., "angle": ..., "date": ..., "title": ...}, ...]
-    """
     cutoff = datetime.now() - timedelta(days=ANGLE_BLOCK_DAYS)
     blocked = []
     for p in history["posts"]:
@@ -161,29 +142,24 @@ def get_blocked_angles(history: dict) -> list[dict]:
 
 
 def build_date_block_section(history: dict) -> str:
-    """
-    날짜 기반 차단 정보를 프롬프트용 문자열로 변환.
-    코드가 계산한 결과를 명시적으로 전달해 AI 임의 해제 방지.
-    """
     lines = ["## 🔒 날짜 기반 자동 차단 (코드 직접 계산 — AI 임의 해제 불가)\n"]
 
-    # ── 툴 차단 ─────────────────────────────────────────────────────────────
     blocked_tools = get_blocked_tools(history)
     if blocked_tools:
         lines.append(
-            f"### 최근 {TOOL_BLOCK_DAYS}일 내 다룬 툴 (반복성 포스트 한정) — 선택 금지"
+            f"### 최근 {TOOL_BLOCK_DAYS}일 내 다룬 툴 — 선택 금지"
         )
         for tool, last_date in sorted(blocked_tools.items()):
             days_ago = (datetime.now() - datetime.strptime(last_date, "%Y-%m-%d %H:%M")).days
             lines.append(f"  - {tool} (마지막: {last_date}, {days_ago}일 전)")
         lines.append("")
-        lines.append("  ※ 단, 해당 툴의 새 버전 출시 / major 업데이트 / 서비스 종료 /")
-        lines.append("     가격 정책 대규모 변경 등 새로운 소식이 있으면 무조건 허용")
-        lines.append("  ※ 예외 사용 시 reason 필드에 반드시 예외 사유 명시\n")
+        lines.append("  ※ 단, 해당 툴의 완전히 새로운 기능 발표 / major 버전 출시 /")
+        lines.append("     서비스 종료 / 가격 정책 대규모 변경 등 어제와 다른 새 소식이면 허용")
+        lines.append("  ※ '출시 소식'이라도 어제와 동일한 소식이면 차단 유지")
+        lines.append("  ※ 예외 사용 시 reason 필드에 반드시 구체적 사유 명시\n")
     else:
         lines.append(f"  (최근 {TOOL_BLOCK_DAYS}일 내 차단된 툴 없음)\n")
 
-    # ── 각도 차단 ───────────────────────────────────────────────────────────
     blocked_angles = get_blocked_angles(history)
     if blocked_angles:
         lines.append(
@@ -219,10 +195,6 @@ def clean_markdown(html: str) -> str:
 
 
 def search(query: str, max_tokens: int = 8000) -> str:
-    """
-    웹 검색 + 발행일 명시 요구.
-    PERMANENT_BLOCK 키워드가 핵심인 결과는 요약에서 제외.
-    """
     today  = datetime.now().strftime("%Y년 %m월 %d일")
     cutoff = (datetime.now() - timedelta(days=2)).strftime("%Y년 %m월 %d일")
     block_clause = _block_clause()
@@ -323,6 +295,14 @@ def save_history(history: dict):
 
 
 def add_to_history(history: dict, title: str, topic: str, tool: str, track: str):
+    """
+    ✅ v6.6.0: tool 필드 누락 방지 로직 추가
+    - tool이 빈 문자열이면 이력에서 차단 판단이 안 됨
+    - 호출부에서 이미 fallback 처리하지만 여기서도 경고 로그
+    """
+    if not tool:
+        log.warning("  ⚠️ add_to_history: tool 필드가 비어있음 → 차단 이력 미적용 주의")
+
     history["posts"].append({
         "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "title": title,
@@ -366,10 +346,8 @@ def get_blogger_recent_titles(max_results: int = 20) -> list[str]:
 def build_avoid_context(history: dict, blogger_titles: list[str]) -> str:
     lines = []
 
-    # ── 날짜 기반 차단 (코드 직접 계산) ────────────────────────────────────
     lines.append(build_date_block_section(history))
 
-    # ── 영구 차단 키워드 ────────────────────────────────────────────────────
     if PERMANENT_BLOCK:
         kw = ", ".join(PERMANENT_BLOCK)
         lines.append(f"""
@@ -379,7 +357,6 @@ def build_avoid_context(history: dict, blogger_titles: list[str]) -> str:
 - 제목이 달라도 내용의 주요 주제로 다루는 것 금지
 """)
 
-    # ── 최근 14일 포스트 상세 ───────────────────────────────────────────────
     cutoff_14 = datetime.now() - timedelta(days=14)
     recent_14 = [
         p for p in history["posts"]
@@ -392,7 +369,6 @@ def build_avoid_context(history: dict, blogger_titles: list[str]) -> str:
                 f"- [{p['track']}] {p['date']} | {p.get('tool','?')} | {p['title']}"
             )
 
-    # ── Blogger 기존 제목 ───────────────────────────────────────────────────
     if blogger_titles:
         lines.append("\n## 블로그 기존 포스트 제목 전체 (유사 각도·주제 금지)")
         for t in blogger_titles:
@@ -400,7 +376,9 @@ def build_avoid_context(history: dict, blogger_titles: list[str]) -> str:
 
     lines.append("""
 ## ⛔ 중복 판단 기준
-- 같은 툴을 5일 이내 다시 다루는 경우 (단, 새 업데이트/버전/소식 있으면 허용)
+- 같은 툴을 5일 이내 다시 다루는 경우
+  → '출시/업데이트' 소식이어도, 어제와 동일한 소식이면 차단 유지
+  → 완전히 새로운 기능/버전/정책 변경이어야 예외 허용
 - 같은 툴의 활용법/설정/사용법 등 각도만 바꾼 경우 (30일 이내)
 - 같은 뉴스 이벤트를 다른 제목으로 반복하는 경우
 → 위 기준 해당 시 반드시 다른 툴 / 완전히 다른 주제 선택""")
@@ -423,10 +401,12 @@ def decide_topic(track: str, avoid_context: str, tool_name: str = None) -> dict:
 {avoid_context}
 {block_clause}
 
-## ✅ 차단 예외 원칙
-- 차단된 툴이라도 오늘 새 버전 출시 / major 업데이트 / 서비스 정책 대규모 변경 소식이 있으면 무조건 허용
-- "어제 다뤘던 툴인데 오늘 새 소식 나왔다" → 반드시 다뤄야 함
-- 예외 사용 시 reason 필드에 구체적 사유 명시
+## ✅ 차단 예외 원칙 (매우 엄격하게 적용)
+- 차단된 툴이라도 오늘 완전히 새로운 기능 / major 버전 출시 / 서비스 정책 대규모 변경이 있으면 허용
+- ⚠️ 단, '출시 소식'이라는 이유만으로 예외 적용 금지
+  → 어제도 같은 툴의 출시 소식을 다뤘다면 오늘도 차단
+  → 어제와 다른 새로운 내용(다른 기능, 다른 버전)이어야만 예외
+- 예외 사용 시 reason 필드에 "어제와 다른 점"을 구체적으로 명시
 """
 
     if track == "news":
@@ -455,6 +435,7 @@ def decide_topic(track: str, avoid_context: str, tool_name: str = None) -> dict:
 - 반드시 최근 24~48시간 이내 소식 우선
 - 오래된 일반 설명 기사 제외
 - 실제 업데이트/출시/정책변경/가격변경 등 구체적 뉴스
+- ⚠️ 차단된 툴은 어제와 완전히 다른 새 소식이 있을 때만 선택 가능
 
 ## 도구 우선순위
 최우선: Claude Code, Cowork, Google Stitch, Gemini 2.5, Antigravity, Firebase Genkit, Veo
@@ -473,7 +454,7 @@ JSON만 출력 (코드블록 없이):
   "todays_pick": "오늘의 픽 뉴스 제목",
   "todays_pick_tool": "오늘의 픽 도구명",
   "todays_pick_reason": "픽으로 선정한 이유",
-  "reason": "전체 주제 선택 이유 + 차단 툴 우회 여부 및 사유",
+  "reason": "전체 주제 선택 이유 + 차단 툴 우회 여부 및 사유 (어제와 다른 점 명시)",
   "search_queries": ["픽 심화 검색 쿼리1", "픽 심화 검색 쿼리2", "픽 실전 사용법 쿼리"]
 }}
 """
@@ -503,7 +484,7 @@ JSON만 출력 (코드블록 없이):
 
 ## 선택 기준
 - 차단 목록에 없는 툴 중 가장 최신 소식이 있는 것 우선
-- 차단된 툴이라도 오늘 새 소식 있으면 무조건 선택
+- 차단된 툴이라도 어제와 완전히 다른 새 소식 있으면 선택 가능
 - 새 소식 없는 차단 툴은 절대 선택 금지
 
 JSON만 출력:
@@ -548,6 +529,7 @@ JSON만 출력:
 JSON만 출력:
 {{
   "topic": "오늘의 교육 주제 (한 문장)",
+  "tool": "주로 다루는 AI 도구 이름 (없으면 빈 문자열)",
   "reason": "이 주제를 선택한 이유 + 차단 툴 우회 여부 및 사유",
   "search_queries": ["심화 검색 쿼리1", "심화 검색 쿼리2", "실전 적용 쿼리"]
 }}
@@ -589,11 +571,9 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 오늘 날짜: {today} ({year}년 기준으로만 작성)
 오늘 주제: {topic}
 
-## ⚠️ 연도 규칙 (최우선 적용 — 절대 어기지 말 것)
+## ⚠️ 연도 규칙 (최우선 적용)
 - 현재 연도는 {year}년입니다. 이것은 확정된 사실입니다.
 - 제목과 본문에 포함된 연도({year})를 절대 변경하지 마세요.
-- {year}년이 미래처럼 보이더라도 이것이 현재 날짜입니다.
-- 연도를 {year-1}년 또는 {year-2}년으로 수정하는 행위는 오류입니다.
 
 {block_clause}
 
@@ -675,7 +655,6 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 분량: 2500~3000자
 """
 
-    # ── 1단계: HTML 본문 생성 ────────────────────────────────────────────────
     log.info("  ✍️  1단계: HTML 본문 생성 중...")
     html_prompt = f"""
 {base_rules}
@@ -719,7 +698,6 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
     content_html = clean_markdown(content_html)
     log.info(f"  ✅ HTML 본문 생성 완료 ({len(content_html)}자)")
 
-    # ── 2단계: 메타데이터(제목) 생성 ────────────────────────────────────────
     log.info("  📋 2단계: 본문 기반 메타데이터 생성 중...")
     meta_prompt = f"""
 아래 블로그 본문을 읽고 메타데이터를 생성해줘.
@@ -804,7 +782,6 @@ def verify_title_content_match(title: str, content_html: str) -> str:
 ## ⚠️ 연도 규칙 (최우선)
 - 현재 연도는 {year}년입니다. 확정된 사실입니다.
 - 제목의 연도({year})는 절대 수정하지 마세요.
-- 연도는 불일치 사유가 절대 아닙니다.
 
 ## 현재 제목
 {title}
@@ -828,7 +805,6 @@ def verify_title_content_match(title: str, content_html: str) -> str:
         status    = result.get("status", "ok")
         new_title = result.get("title", title).strip()
 
-        # 연도 강제 복원
         if str(year) in title and str(year) not in new_title:
             log.warning("  ⚠️ 연도 변경 감지! 강제 복원 중...")
             for wrong_year in [year - 1, year - 2, year + 1, year - 3]:
@@ -976,7 +952,7 @@ def post_to_blogger(title: str, post_data: dict, image_url: str) -> str:
 # ═════════════════════════════════════════════════════════════════════════════
 def main():
     log.info("=" * 60)
-    log.info("🚀 바이브코딩 스쿨 자동화 시작 (v6.5.0)")
+    log.info("🚀 바이브코딩 스쿨 자동화 시작 (v6.6.0)")
     log.info(f"   날짜: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     log.info(f"   현재 연도: {datetime.now().year}년 (고정)")
     log.info(f"   영구 차단: {', '.join(PERMANENT_BLOCK) if PERMANENT_BLOCK else '없음'}")
@@ -990,11 +966,10 @@ def main():
         history        = load_history()
         blogger_titles = get_blogger_recent_titles(max_results=20)
 
-        # ── 차단 현황 로그 ──────────────────────────────────────────────────
         blocked_tools = get_blocked_tools(history)
         if blocked_tools:
             log.info(
-                f"  🔒 날짜 차단 툴 (최근 {TOOL_BLOCK_DAYS}일, 반복성 한정): "
+                f"  🔒 날짜 차단 툴 (최근 {TOOL_BLOCK_DAYS}일): "
                 + ", ".join(f"{t}({d})" for t, d in blocked_tools.items())
             )
         else:
@@ -1028,14 +1003,23 @@ def main():
 
         blog_url = post_to_blogger(best_title, post_data, image_url)
 
+        # ✅ v6.6.0: tool 필드 누락 방지 — news 트랙 fallback 처리
+        tool_for_history = (
+            topic_data.get("tool")
+            or topic_data.get("todays_pick_tool")
+            or (topic_data.get("news_list") or [{}])[0].get("tool", "")
+        )
+        if not tool_for_history:
+            log.warning("  ⚠️ tool 필드를 확정할 수 없음 — 히스토리에 tool 없이 저장됨")
+
         add_to_history(
             history,
             title=best_title,
             topic=topic_data["topic"],
-            tool=topic_data.get("tool") or topic_data.get("todays_pick_tool", ""),
+            tool=tool_for_history,
             track=track,
         )
-        log.info("  ✅ 히스토리 업데이트 완료")
+        log.info(f"  ✅ 히스토리 업데이트 완료 (tool: {tool_for_history or '미확정'})")
 
         card_image_urls = []
         try:
