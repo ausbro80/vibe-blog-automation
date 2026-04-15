@@ -1,12 +1,11 @@
 """
-바이브코딩 스쿨 — YouTube Shorts 자동화 v3.1
+바이브코딩 스쿨 — YouTube Shorts 자동화 v3.4
 ─────────────────────────────────────────
-v3.2 변경사항:
-  - Gemini TTS (유료) → Google Cloud TTS Chirp 3 HD (월 100만자 무료) 교체
-  - 한국어 남성 음성 사용 (ko-KR-Chirp3-HD-Charon)
-  - Chirp 3 HD 리전 엔드포인트 적용 (us-texttospeech)
-v3.3 변경사항:
-  - TTS OAuth → API 키 방식으로 변경 (401 오류 수정)
+v3.4 변경사항:
+  - 릴스 썸네일 고정: 카드1 프레임을 Cloudinary 업로드 후 cover_url로 지정
+  - create_shorts_video() 반환값 tuple(video_path, card1_frame) 로 변경
+  - upload_to_instagram_reels() cover_url 파라미터 추가
+  - post_youtube_shorts() 썸네일 업로드 로직 추가
 """
 
 import os
@@ -17,7 +16,7 @@ import base64
 import logging
 import tempfile
 import subprocess
-import shutil
+import hashlib
 from pathlib import Path
 from io import BytesIO
 
@@ -33,7 +32,7 @@ log = logging.getLogger(__name__)
 ANTHROPIC_API_KEY     = os.environ["ANTHROPIC_API_KEY"]
 GEMINI_API_KEY        = os.environ["GEMINI_API_KEY"]
 GOOGLE_CREDENTIALS    = os.environ["GOOGLE_CREDENTIALS_JSON"]
-GOOGLE_TTS_API_KEY    = os.environ["GOOGLE_TTS_API_KEY"]  # ✅ API 키 방식
+GOOGLE_TTS_API_KEY    = os.environ["GOOGLE_TTS_API_KEY"]
 INSTAGRAM_TOKEN       = os.environ.get("INSTAGRAM_ACCESS_TOKEN", "")
 INSTAGRAM_ACCOUNT_ID  = os.environ.get("INSTAGRAM_ACCOUNT_ID", "")
 CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
@@ -234,6 +233,7 @@ def make_card_frame(image_bytes: bytes, title: str, subtitle: str) -> bytes:
             img.paste(logo, ((W - logo_w) // 2, 20), logo)
         except:
             font_brand = load_font(36, bold=True)
+            draw = ImageDraw.Draw(img)
             draw.text((W//2, 65), "바이브코딩 스쿨", font=font_brand, fill=(255,255,255), anchor="mm")
     draw = ImageDraw.Draw(img)
 
@@ -354,12 +354,9 @@ def make_outro_frame() -> bytes:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 5: Google Cloud TTS 음성 생성 (API 키 방식 ✅)
+# STEP 5: Google Cloud TTS 음성 생성
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_voice(script: str) -> bytes:
-    """Google Cloud TTS Chirp 3 HD — API 키 방식 (401 오류 수정)"""
-
-    # ✅ OAuth 대신 API 키 방식으로 변경
     url = f"https://us-texttospeech.googleapis.com/v1beta1/text:synthesize?key={GOOGLE_TTS_API_KEY}"
     headers = {"Content-Type": "application/json"}
     payload = {
@@ -374,7 +371,6 @@ def generate_voice(script: str) -> bytes:
             "sampleRateHertz": 24000,
         },
     }
-
     for attempt in range(3):
         try:
             resp = requests.post(url, headers=headers, json=payload, timeout=30)
@@ -385,7 +381,6 @@ def generate_voice(script: str) -> bytes:
             wait = 10 * (attempt + 1)
             log.warning(f"  ⚠️ TTS 실패 (시도 {attempt+1}/3): {e}")
             time.sleep(wait)
-
     raise RuntimeError("Google Cloud TTS 3회 모두 실패")
 
 
@@ -427,10 +422,13 @@ def make_video_segment(img_path: Path, audio_path: Path, output_path: Path):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 6: 전체 영상 합성
+# STEP 6: 전체 영상 합성 ✅ v3.4: card1_frame 같이 반환
 # ═════════════════════════════════════════════════════════════════════════════
-def create_shorts_video(card_scripts: list, title: str) -> str:
+def create_shorts_video(card_scripts: list, title: str) -> tuple:
+    """반환: (video_path: str, card1_frame: bytes)"""
     log.info("🎬 쇼츠 영상 합성 중...")
+
+    card1_frame_bytes = None
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
@@ -456,6 +454,11 @@ def create_shorts_video(card_scripts: list, title: str) -> str:
                 card_data.get("title", ""),
                 card_data.get("script", "")
             )
+
+            # ✅ 카드1 프레임 저장 → 릴스 썸네일용
+            if i == 0:
+                card1_frame_bytes = card_frame
+
             card_img_path = tmpdir / f"card_{i}.png"
             card_img_path.write_bytes(card_frame)
             card_audio_bytes = generate_voice(card_data.get("script", ""))
@@ -492,15 +495,14 @@ def create_shorts_video(card_scripts: list, title: str) -> str:
             raise RuntimeError(f"ffmpeg concat 실패: {result.stderr}")
 
         log.info(f"  ✅ 영상 합성 완료: {final_path}")
-        return final_path
+        return final_path, card1_frame_bytes  # ✅ tuple 반환
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 7-1: Cloudinary 업로드
+# STEP 7-1: Cloudinary 영상 업로드
 # ═════════════════════════════════════════════════════════════════════════════
 def upload_video_to_cloudinary(video_path: str) -> str:
     log.info("☁️  Cloudinary 영상 업로드 중...")
-    import hashlib
     timestamp = str(int(time.time()))
     public_id = "vibe_school/reels_" + timestamp
     params_to_sign = "public_id=" + public_id + "&timestamp=" + timestamp
@@ -521,30 +523,43 @@ def upload_video_to_cloudinary(video_path: str) -> str:
         )
     resp.raise_for_status()
     url = resp.json().get("secure_url", "")
-    log.info(f"  ✅ Cloudinary 업로드 완료: {url[:60]}...")
+    log.info(f"  ✅ Cloudinary 영상 업로드 완료: {url[:60]}...")
     return url
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 7-2: 인스타그램 릴스 업로드
+# STEP 7-2: 인스타그램 릴스 업로드 ✅ v3.4: cover_url 추가
 # ═════════════════════════════════════════════════════════════════════════════
-def upload_to_instagram_reels(video_url: str, title: str, blog_url: str) -> str:
+def upload_to_instagram_reels(video_url: str, title: str, blog_url: str,
+                               cover_url: str = "") -> str:
     log.info("📱 인스타그램 릴스 업로드 중...")
     if not INSTAGRAM_TOKEN or not INSTAGRAM_ACCOUNT_ID:
         log.warning("  ⚠️ 인스타그램 토큰/계정 없음 → 릴스 스킵")
         return ""
+
     base = "https://graph.instagram.com/v25.0"
-    caption = title + "\n\n블로그에서 더 보기: " + blog_url + "\n\n#바이브코딩 #AI코딩 #Shorts #바이브코딩스쿨"
+    caption = (
+        title + "\n\n"
+        "블로그에서 더 보기: " + blog_url + "\n\n"
+        "#바이브코딩 #AI코딩 #Shorts #바이브코딩스쿨"
+    )
+
+    payload = {
+        "media_type": "REELS",
+        "video_url": video_url,
+        "caption": caption,
+        "share_to_feed": True,
+        "access_token": INSTAGRAM_TOKEN,
+    }
+    # ✅ 카드1 이미지를 썸네일로 고정
+    if cover_url:
+        payload["cover_url"] = cover_url
+        log.info(f"  🖼️  릴스 썸네일 지정: {cover_url[:60]}...")
+
     for attempt in range(3):
         resp = requests.post(
             f"{base}/{INSTAGRAM_ACCOUNT_ID}/media",
-            json={
-                "media_type": "REELS",
-                "video_url": video_url,
-                "caption": caption,
-                "share_to_feed": True,
-                "access_token": INSTAGRAM_TOKEN,
-            },
+            json=payload,
             timeout=30,
         )
         if resp.ok:
@@ -553,8 +568,10 @@ def upload_to_instagram_reels(video_url: str, title: str, blog_url: str) -> str:
         time.sleep(30)
     resp.raise_for_status()
     container_id = resp.json()["id"]
-    log.info(f"  ⏳ 인스타 영상 처리 대기 중... (30초)")
+
+    log.info("  ⏳ 인스타 영상 처리 대기 중... (30초)")
     time.sleep(30)
+
     for attempt in range(3):
         resp = requests.post(
             f"{base}/{INSTAGRAM_ACCOUNT_ID}/media_publish",
@@ -565,6 +582,7 @@ def upload_to_instagram_reels(video_url: str, title: str, blog_url: str) -> str:
             break
         time.sleep(30)
     resp.raise_for_status()
+
     post_id = resp.json()["id"]
     reels_url = f"https://www.instagram.com/reel/{post_id}/"
     log.info(f"  ✅ 인스타 릴스 완료: {reels_url}")
@@ -614,7 +632,7 @@ def upload_to_youtube(video_path: str, meta: dict) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 메인 함수
+# 메인 함수 ✅ v3.4: 썸네일 Cloudinary 업로드 후 cover_url 전달
 # ═════════════════════════════════════════════════════════════════════════════
 def post_youtube_shorts(
     title: str,
@@ -625,17 +643,54 @@ def post_youtube_shorts(
     try:
         meta = generate_card_scripts(title, content_html, blog_url)
         card_scripts = meta.get("cards", [])
-        video_path = create_shorts_video(card_scripts, title)
+
+        # ✅ tuple 언패킹
+        video_path, card1_frame = create_shorts_video(card_scripts, title)
+
+        # ✅ 카드1 이미지 Cloudinary 업로드 → cover_url 획득
+        cover_url = ""
+        if card1_frame and CLOUDINARY_CLOUD_NAME:
+            try:
+                log.info("  🖼️  릴스 썸네일 업로드 중...")
+                timestamp = str(int(time.time()))
+                public_id = f"vibe_school/thumb_{timestamp}"
+                params_to_sign = f"public_id={public_id}&timestamp={timestamp}"
+                signature = hashlib.sha1(
+                    (params_to_sign + CLOUDINARY_API_SECRET).encode()
+                ).hexdigest()
+                resp = requests.post(
+                    f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD_NAME}/image/upload",
+                    data={
+                        "public_id": public_id,
+                        "timestamp": timestamp,
+                        "api_key": CLOUDINARY_API_KEY,
+                        "signature": signature,
+                    },
+                    files={"file": ("thumb.png", card1_frame, "image/png")},
+                    timeout=60,
+                )
+                resp.raise_for_status()
+                cover_url = resp.json().get("secure_url", "")
+                log.info(f"  ✅ 썸네일 업로드 완료: {cover_url[:60]}...")
+            except Exception as e:
+                log.warning(f"  ⚠️ 썸네일 업로드 실패 (릴스는 계속 진행): {e}")
+
         reels_url = ""
         try:
             video_public_url = upload_video_to_cloudinary(video_path)
-            reels_url = upload_to_instagram_reels(video_public_url, title, blog_url)
+            reels_url = upload_to_instagram_reels(
+                video_public_url, title, blog_url,
+                cover_url=cover_url,  # ✅ 썸네일 전달
+            )
         except Exception as e:
             log.warning(f"  ⚠️ 인스타 릴스 실패: {e}")
+
         youtube_url = upload_to_youtube(video_path, meta)
+
         if reels_url:
             log.info(f"  📱 인스타 릴스: {reels_url}")
         return youtube_url
+
     except Exception as e:
         log.warning(f"  ⚠️ 유튜브 쇼츠 실패 (블로그는 정상): {e}")
         return ""
