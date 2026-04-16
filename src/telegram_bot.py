@@ -3,6 +3,11 @@
 ──────────────────────────────────────────────
 텔레그램에서 글 내용 받으면 → GitHub Actions 트리거 → 블로그 + 인스타 포스팅
 중복 방지: update_id 체크
+
+명령어:
+  /test [내용]  → 블로그만 발행 (테스트용)
+  /post [내용]  → 전체 발행 (블로그+인스타+유튜브)
+  그냥 텍스트   → 전체 발행 (기본)
 """
 
 import os
@@ -82,8 +87,9 @@ def get_new_messages(last_id: int) -> list:
 # ═════════════════════════════════════════════════════════════
 # GitHub Actions 트리거
 # ═════════════════════════════════════════════════════════════
-def trigger_github_actions(content: str) -> bool:
-    log.info(f"🚀 GitHub Actions 트리거: {content[:60]}...")
+def trigger_github_actions(content: str, dry_run: bool = False) -> bool:
+    mode = "테스트(블로그만)" if dry_run else "전체 발행"
+    log.info(f"🚀 GitHub Actions 트리거 [{mode}]: {content[:60]}...")
     resp = requests.post(
         f"https://api.github.com/repos/{GH_REPO}/actions/workflows/telegram-post.yml/dispatches",
         headers={
@@ -94,7 +100,7 @@ def trigger_github_actions(content: str) -> bool:
             "ref": "main",
             "inputs": {
                 "custom_content": content,
-                "dry_run": "false",
+                "dry_run": "true" if dry_run else "false",
             },
         },
         timeout=15,
@@ -136,25 +142,52 @@ def main():
             save_state(update_id)
             continue
 
-        # 내용이 너무 짧으면 안내
-        if len(text) < 20:
+        # 명령어 파싱
+        dry_run = False
+        if text.startswith("/test "):
+            content = text[6:].strip()
+            dry_run = True
+        elif text.startswith("/post "):
+            content = text[6:].strip()
+            dry_run = False
+        elif text.startswith("/help"):
             send_telegram(
-                "✏️ 글 내용을 더 자세히 보내주세요! (최소 20자)\n\n"
+                "📖 사용법\n\n"
+                "/test [내용] → 블로그만 발행 (퀄리티 확인용)\n"
+                "/post [내용] → 전체 발행 (블로그+인스타+유튜브)\n"
+                "그냥 텍스트 → 전체 발행\n\n"
+                "💡 링크 + 내용 같이 보내면 web_search로 자동 보강!"
+            )
+            save_state(update_id)
+            continue
+        elif text.startswith("/"):
+            send_telegram("❓ 알 수 없는 명령어예요. /help 로 도움말 확인해주세요.")
+            save_state(update_id)
+            continue
+        else:
+            content = text
+            dry_run = False
+
+        # 내용 길이 체크
+        if len(content) < 20:
+            send_telegram(
+                "✏️ 내용을 더 자세히 보내주세요! (최소 20자)\n\n"
                 "예시:\n"
-                "Netflix가 VOID라는 AI 영상편집 기술을 오픈소스로 공개했어. "
-                "영상에서 물체를 지우면 물리 법칙까지 자동으로 재계산해줘."
+                "https://github.com/Netflix/void-model\n"
+                "Netflix VOID - 영상에서 물체 지우면 물리법칙까지 재계산. 오픈소스 무료."
             )
             save_state(update_id)
             continue
 
         # 포스팅 시작 알림
+        mode_label = "🧪 테스트 (블로그만)" if dry_run else "🚀 전체 발행"
         send_telegram(
-            f"✍️ 포스팅 시작!\n\n"
-            f"📄 내용 미리보기:\n{text[:100]}{'...' if len(text) > 100 else ''}\n\n"
+            f"{mode_label}\n\n"
+            f"📄 내용 미리보기:\n{content[:100]}{'...' if len(content) > 100 else ''}\n\n"
             f"⏱ 약 5~10분 후 완료 알림이 와요!"
         )
 
-        success = trigger_github_actions(text)
+        success = trigger_github_actions(content, dry_run=dry_run)
         if not success:
             send_telegram("❌ 트리거 실패했어요. 잠시 후 다시 시도해주세요.")
 
