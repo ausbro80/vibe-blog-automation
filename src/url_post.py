@@ -1,5 +1,5 @@
 """
-바이브코딩 스쿨 — URL 기반 즉시 포스팅
+바이브코딩 스쿨 — 텔레그램 콘텐츠 기반 즉시 포스팅
 """
 
 import os
@@ -27,7 +27,7 @@ BLOGGER_BLOG_ID    = os.environ["BLOGGER_BLOG_ID"]
 GOOGLE_CREDENTIALS = os.environ["GOOGLE_CREDENTIALS_JSON"]
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID   = os.environ["TELEGRAM_CHAT_ID"]
-CUSTOM_URL         = os.environ["CUSTOM_URL"]
+CUSTOM_CONTENT     = os.environ["CUSTOM_CONTENT"]  # ← URL 대신 글 내용 직접 수신
 
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
@@ -96,29 +96,31 @@ def parse_json_from_text(raw: str) -> dict:
     return json.loads(raw.strip())
 
 
-def generate_post_from_url(url: str) -> dict:
-    log.info(f"URL 내용 분석 중: {url[:60]}...")
+def generate_post_from_content(raw_content: str) -> dict:
+    """텔레그램에서 받은 글 내용을 블로그 포스트로 변환 (URL 긁기 없음)"""
+    log.info(f"글 내용 변환 중... ({len(raw_content)}자)")
     year  = datetime.now().year
     today = datetime.now().strftime("%Y년 %m월 %d일")
 
     prompt = f"""
-아래 URL의 내용을 읽고 '바이브코딩 스쿨' 블로그 포스트를 작성해줘.
+아래 글 내용을 '바이브코딩 스쿨' 블로그 포스트로 작성해줘.
 
-URL: {url}
+## 원본 글 내용
+{raw_content}
+
 오늘 날짜: {today}
 
 ## 바이브코딩 스쿨 글쓰기 원칙
 - 독자: 코딩 0% 일반인 (직장인, 소상공인, 주부, 학생)
 - 어조: 친근한 선생님 ("~해요", "~거예요", "~네요")
 - 전문용어 나오면 반드시 쉽게 풀어서 설명
-- URL의 핵심 내용을 원문 그대로 유지하며 녹여낼 것 (요약 금지)
+- 원본 내용의 핵심을 충실하게 유지할 것 (임의 창작 금지)
 - {year}년 현재 기준으로 작성
 - 분량: 2000~2500자
 
 ## 사실 확인 원칙 (반드시 준수)
-- URL에 명시된 수치/통계/사실만 사용
-- URL에 없는 내용 절대 창작/추측 금지
-- 수치 인용 시 논리적 일관성 확인
+- 원본 글에 있는 내용만 사용
+- 원본에 없는 수치/사실 절대 창작/추측 금지
 - 불확실한 내용은 "~라고 알려져 있어요" 등 완화 표현 사용
 
 ## 글 구조
@@ -150,24 +152,22 @@ URL: {url}
 
     for attempt in range(3):
         try:
-            time.sleep(10)
+            time.sleep(5)
             response = claude.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=8000,
-                tools=[{"type": "web_search_20250305", "name": "web_search"}],
-                tool_choice={"type": "auto"},
                 messages=[{"role": "user", "content": prompt}],
             )
             raw = extract_text(response)
             if not raw:
                 raise ValueError("응답 텍스트 없음")
-            log.info(f"  URL 내용 분석 완료 ({len(raw)}자)")
+            log.info(f"  글 변환 완료 ({len(raw)}자)")
             return parse_json_from_text(raw)
         except Exception as e:
             wait = 20 * (attempt + 1)
-            log.warning(f"  URL 분석 실패 (시도 {attempt+1}/3): {e}")
+            log.warning(f"  글 변환 실패 (시도 {attempt+1}/3): {e}")
             time.sleep(wait)
-    raise RuntimeError("URL 내용 읽기 3회 모두 실패")
+    raise RuntimeError("글 변환 3회 모두 실패")
 
 
 def select_best_title(post_data: dict) -> str:
@@ -280,12 +280,12 @@ def post_to_blogger(title: str, post_data: dict, image_b64: str) -> str:
 
 def main():
     log.info("=" * 60)
-    log.info(f"URL 기반 즉시 포스팅 시작")
-    log.info(f"URL: {CUSTOM_URL[:60]}...")
+    log.info("텔레그램 콘텐츠 기반 즉시 포스팅 시작")
+    log.info(f"내용 미리보기: {CUSTOM_CONTENT[:80]}...")
     log.info("=" * 60)
 
     try:
-        post_data  = generate_post_from_url(CUSTOM_URL)
+        post_data  = generate_post_from_content(CUSTOM_CONTENT)
         best_title = select_best_title(post_data)
         log.info(f"  제목: {best_title}")
 
@@ -339,7 +339,6 @@ def main():
     except Exception as e:
         log.error(f"실패: {e}", exc_info=True)
         send_telegram(f"❌ 포스팅 실패했어요!\n\n오류: {str(e)[:200]}")
-        sys.exit(1)
 
 
 if __name__ == "__main__":
