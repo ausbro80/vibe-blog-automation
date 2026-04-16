@@ -1,6 +1,7 @@
 """
 바이브코딩 스쿨 — 텔레그램 콘텐츠 기반 즉시 포스팅
 링크 + 글 내용 같이 보내면 web_search로 자동 보강
+DRY_RUN=true 시 블로그만 발행 (테스트용)
 """
 
 import os
@@ -30,6 +31,7 @@ GOOGLE_CREDENTIALS = os.environ["GOOGLE_CREDENTIALS_JSON"]
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID   = os.environ["TELEGRAM_CHAT_ID"]
 CUSTOM_CONTENT     = os.environ["CUSTOM_CONTENT"]
+DRY_RUN            = os.environ.get("DRY_RUN", "false").lower() == "true"
 
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
@@ -317,8 +319,9 @@ def post_to_blogger(title: str, post_data: dict, image_b64: str) -> str:
 
 
 def main():
+    mode = "🧪 테스트 (블로그만)" if DRY_RUN else "🚀 전체 발행"
     log.info("=" * 60)
-    log.info("텔레그램 콘텐츠 기반 즉시 포스팅 시작")
+    log.info(f"텔레그램 콘텐츠 기반 즉시 포스팅 시작 [{mode}]")
     log.info(f"내용 미리보기: {CUSTOM_CONTENT[:80]}...")
     log.info("=" * 60)
 
@@ -329,6 +332,17 @@ def main():
 
         image_b64 = generate_thumbnail(best_title)
         blog_url  = post_to_blogger(best_title, post_data, image_b64)
+
+        # DRY_RUN이면 블로그만 발행 후 종료
+        if DRY_RUN:
+            send_telegram(
+                f"🧪 테스트 완료! 블로그만 발행됐어요.\n\n"
+                f"📝 제목: {best_title}\n\n"
+                f"🌐 블로그: {blog_url}\n\n"
+                f"퀄리티 확인 후 /post 로 전체 발행하세요!"
+            )
+            log.info("DRY_RUN 완료 — 인스타/유튜브 스킵")
+            return
 
         # 인스타 카드뉴스
         insta_url = None
@@ -363,7 +377,7 @@ def main():
         except Exception as e:
             log.warning(f"  유튜브 쇼츠 실패: {e}")
 
-        msg = f"✅ 포스팅 완료!\n\n📝 제목: {best_title}\n\n🌐 블로그: {blog_url}"
+        msg = f"✅ 전체 발행 완료!\n\n📝 제목: {best_title}\n\n🌐 블로그: {blog_url}"
         if insta_url:
             msg += f"\n📸 인스타: {insta_url}"
         if youtube_url:
