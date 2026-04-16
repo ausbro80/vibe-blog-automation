@@ -1,11 +1,13 @@
 """
 바이브코딩 스쿨 — 텔레그램 콘텐츠 기반 즉시 포스팅
+링크 + 글 내용 같이 보내면 web_search로 자동 보강
 """
 
 import os
 import sys
 import json
 import time
+import re
 import logging
 import requests
 import anthropic
@@ -27,7 +29,7 @@ BLOGGER_BLOG_ID    = os.environ["BLOGGER_BLOG_ID"]
 GOOGLE_CREDENTIALS = os.environ["GOOGLE_CREDENTIALS_JSON"]
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID   = os.environ["TELEGRAM_CHAT_ID"]
-CUSTOM_CONTENT     = os.environ["CUSTOM_CONTENT"]  # ← URL 대신 글 내용 직접 수신
+CUSTOM_CONTENT     = os.environ["CUSTOM_CONTENT"]
 
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
@@ -96,32 +98,61 @@ def parse_json_from_text(raw: str) -> dict:
     return json.loads(raw.strip())
 
 
+def extract_urls(text: str) -> list:
+    """텍스트에서 URL 추출"""
+    pattern = r'https?://[^\s\)]+'
+    return re.findall(pattern, text)
+
+
 def generate_post_from_content(raw_content: str) -> dict:
-    """텔레그램에서 받은 글 내용을 블로그 포스트로 변환 (URL 긁기 없음)"""
-    log.info(f"글 내용 변환 중... ({len(raw_content)}자)")
+    """
+    텔레그램 메시지로 블로그 포스트 생성
+    - URL 포함 시: web_search로 내용 보강 후 작성
+    - 텍스트만 있을 시: 텍스트 기반으로 바로 작성
+    """
+    urls = extract_urls(raw_content)
+    has_url = len(urls) > 0
+
+    if has_url:
+        log.info(f"URL 감지됨 ({len(urls)}개) — web_search로 내용 보강")
+    else:
+        log.info("텍스트 전용 — 바로 글 작성")
+
     year  = datetime.now().year
     today = datetime.now().strftime("%Y년 %m월 %d일")
 
-    prompt = f"""
-아래 글 내용을 '바이브코딩 스쿨' 블로그 포스트로 작성해줘.
+    url_instruction = ""
+    if has_url:
+        url_list = "\n".join(f"- {u}" for u in urls)
+        url_instruction = f"""
+## 참고 링크 (web_search로 내용 확인 후 활용)
+{url_list}
 
-## 원본 글 내용
+위 링크의 내용을 web_search로 검색해서 글에 반영해줘.
+단, 검색 내용을 그대로 복붙하지 말고 반드시 완전히 새로 써줘.
+"""
+
+    prompt = f"""
+아래 내용을 '바이브코딩 스쿨' 블로그 포스트로 작성해줘.
+
+## Terry가 보낸 내용
 {raw_content}
 
 오늘 날짜: {today}
+{url_instruction}
 
 ## 바이브코딩 스쿨 글쓰기 원칙
 - 독자: 코딩 0% 일반인 (직장인, 소상공인, 주부, 학생)
 - 어조: 친근한 선생님 ("~해요", "~거예요", "~네요")
 - 전문용어 나오면 반드시 쉽게 풀어서 설명
-- 원본 내용의 핵심을 충실하게 유지할 것 (임의 창작 금지)
+- 원본 내용의 핵심을 충실하게 유지할 것
 - {year}년 현재 기준으로 작성
 - 분량: 2000~2500자
 
 ## 사실 확인 원칙 (반드시 준수)
-- 원본 글에 있는 내용만 사용
-- 원본에 없는 수치/사실 절대 창작/추측 금지
+- 확인된 사실만 사용
 - 불확실한 내용은 "~라고 알려져 있어요" 등 완화 표현 사용
+- 수치/통계는 출처가 명확한 것만 사용
 
 ## 글 구조
 1. 핵심 포인트 박스로 시작
@@ -150,24 +181,31 @@ def generate_post_from_content(raw_content: str) -> dict:
 }}
 """
 
+    tools = [{"type": "web_search_20250305", "name": "web_search"}] if has_url else []
+
     for attempt in range(3):
         try:
             time.sleep(5)
-            response = claude.messages.create(
+            kwargs = dict(
                 model="claude-sonnet-4-20250514",
                 max_tokens=8000,
                 messages=[{"role": "user", "content": prompt}],
             )
+            if tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = {"type": "auto"}
+
+            response = claude.messages.create(**kwargs)
             raw = extract_text(response)
             if not raw:
                 raise ValueError("응답 텍스트 없음")
-            log.info(f"  글 변환 완료 ({len(raw)}자)")
+            log.info(f"  글 생성 완료 ({len(raw)}자)")
             return parse_json_from_text(raw)
         except Exception as e:
             wait = 20 * (attempt + 1)
-            log.warning(f"  글 변환 실패 (시도 {attempt+1}/3): {e}")
+            log.warning(f"  글 생성 실패 (시도 {attempt+1}/3): {e}")
             time.sleep(wait)
-    raise RuntimeError("글 변환 3회 모두 실패")
+    raise RuntimeError("글 생성 3회 모두 실패")
 
 
 def select_best_title(post_data: dict) -> str:
