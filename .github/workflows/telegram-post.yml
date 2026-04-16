@@ -2,8 +2,8 @@ name: 📱 텔레그램 트리거 포스팅
 on:
   workflow_dispatch:
     inputs:
-      custom_url:
-        description: "포스팅할 URL"
+      custom_content:
+        description: "포스팅할 글 내용"
         required: true
         type: string
       dry_run:
@@ -15,7 +15,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
   post-from-url:
-    name: URL 기반 블로그 글 생성 및 포스팅
+    name: 콘텐츠 기반 블로그 글 생성 및 포스팅
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -34,21 +34,21 @@ jobs:
         run: pip install -r requirements.txt
       - name: 🔤 한글 폰트 설치
         run: sudo apt-get install -y fonts-noto-cjk
-      - name: 🚀 URL 기반 포스팅 실행
+      - name: 🚀 콘텐츠 기반 포스팅 실행
         env:
-          ANTHROPIC_API_KEY:        ${{ secrets.ANTHROPIC_API_KEY }}
-          GEMINI_API_KEY:           ${{ secrets.GEMINI_API_KEY }}
-          BLOGGER_BLOG_ID:          ${{ secrets.BLOGGER_BLOG_ID }}
-          GOOGLE_CREDENTIALS_JSON:  ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
-          INSTAGRAM_ACCESS_TOKEN:   ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
-          INSTAGRAM_ACCOUNT_ID:     ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
-          CLOUDINARY_CLOUD_NAME:    ${{ secrets.CLOUDINARY_CLOUD_NAME }}
-          CLOUDINARY_API_KEY:       ${{ secrets.CLOUDINARY_API_KEY }}
-          CLOUDINARY_API_SECRET:    ${{ secrets.CLOUDINARY_API_SECRET }}
-          TELEGRAM_BOT_TOKEN:       ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID:         ${{ secrets.TELEGRAM_CHAT_ID }}
-          CUSTOM_URL:               ${{ inputs.custom_url }}
-          DRY_RUN:                  ${{ inputs.dry_run || 'false' }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CUSTOM_CONTENT: ${{ inputs.custom_content }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
         run: python src/url_post.py
       - name: ♻️ 저장소 활성 유지
         run: |
