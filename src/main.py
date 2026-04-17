@@ -49,7 +49,10 @@ DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
 
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-HISTORY_FILE = Path("posted_history.json")
+# v6.7.2: src/posted_history.json 으로 경로 고정.
+# 기존 Path("posted_history.json")은 CWD 의존 → 워크플로 commit 경로(src/)와 불일치 →
+# 매 실행마다 히스토리 0개로 시작하는 잠재 버그가 있었음.
+HISTORY_FILE = Path(__file__).parent / "posted_history.json"
 
 # ═════════════════════════════════════════════════════════════════════════════
 # ⛔ 영구 차단 키워드
@@ -155,18 +158,38 @@ def get_today_tools(history: dict) -> set[str]:
     }
 
 
-def build_date_block_section(history: dict) -> str:
+def get_today_blogger_titles(blogger_posts: list[dict]) -> list[str]:
+    """v6.7.2: 오늘 Blogger에 발행된 글 제목 목록.
+    히스토리 파일이 비어있어도 이게 진실 소스 역할."""
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    return [
+        p["title"] for p in blogger_posts
+        if p.get("published", "").startswith(today_str)
+    ]
+
+
+def build_date_block_section(history: dict, blogger_posts: list[dict] = None) -> str:
     lines = ["## 🔒 날짜 기반 자동 차단 (코드 직접 계산 — AI 임의 해제 불가)\n"]
 
     # v6.7.1: 같은 날 같은 도구 절대 차단 (Claude 재량 제거)
     today_tools = get_today_tools(history)
     if today_tools:
-        lines.append("### 🚫 오늘 이미 발행한 툴 — 절대 금지 (예외 0)")
+        lines.append("### 🚫 오늘 이미 발행한 툴 (히스토리 기준) — 절대 금지 (예외 0)")
         for t in sorted(today_tools):
             lines.append(f"  - {t}")
         lines.append("  ※ 같은 날 같은 도구를 다른 각도로도 절대 다루지 말 것")
         lines.append("  ※ '새로운 발표/연동/업데이트'라는 이유로도 예외 불가")
         lines.append("  ※ 위 도구 중 하나라도 후보라면 즉시 다른 도구로 변경\n")
+
+    # v6.7.2: 히스토리 파일이 비었어도 Blogger API가 진실 소스. 오늘 발행된 글 제목으로 절대 차단.
+    today_blogger_titles = get_today_blogger_titles(blogger_posts or [])
+    if today_blogger_titles:
+        lines.append("### 🚫 오늘 Blogger에 이미 발행된 글 — 동일 도구·주제 절대 금지 (예외 0)")
+        for t in today_blogger_titles:
+            lines.append(f'  - "{t}"')
+        lines.append("  ※ 위 제목에 등장하는 모든 도구·주제는 오늘 다시 다루지 말 것")
+        lines.append("  ※ '다른 각도', '새 업데이트', '다른 연동' 어떤 이유로도 예외 불가")
+        lines.append("  ※ 후보가 위 제목 어디에든 등장하면 즉시 다른 도구·주제로 변경\n")
 
     blocked_tools = get_blocked_tools(history)
     if blocked_tools:
@@ -376,7 +399,7 @@ def get_blogger_recent_posts(max_results: int = 20) -> list[dict]:
 def build_avoid_context(history: dict, blogger_posts: list[dict]) -> str:
     lines = []
 
-    lines.append(build_date_block_section(history))
+    lines.append(build_date_block_section(history, blogger_posts))
 
     if PERMANENT_BLOCK:
         kw = ", ".join(PERMANENT_BLOCK)
@@ -419,7 +442,8 @@ def build_avoid_context(history: dict, blogger_posts: list[dict]) -> str:
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 1: 오늘의 주제 결정
 # ═════════════════════════════════════════════════════════════════════════════
-def decide_topic(track: str, avoid_context: str, tool_name: str = None) -> dict:
+def decide_topic(track: str, avoid_context: str, tool_name: str = None,
+                 blogger_posts: list[dict] = None) -> dict:
     log.info(f"🧠 [{track.upper()}] 오늘의 주제 AI 자동 결정 중...")
 
     year  = datetime.now().year
@@ -567,23 +591,43 @@ JSON만 출력:
 
     topic_data = call_claude(prompt, max_tokens=1200)
 
-    # v6.7.1: 코드 단계 안전망 — 오늘 이미 다룬 도구가 선택됐으면 즉시 재시도 (1회).
-    # 프롬프트가 강해도 가끔 Claude가 우회하므로 결정론적 차단을 추가.
+    # v6.7.2: 결정론 안전망 — 두 소스로 오늘 충돌 검사.
+    #   (1) 히스토리 파일의 today_tools (이전부터 있던 검사)
+    #   (2) 오늘 발행된 Blogger 제목 substring (히스토리 파일이 비어도 동작)
     history_for_check = load_history()
     today_tools = get_today_tools(history_for_check)
+    today_titles = get_today_blogger_titles(blogger_posts or [])
+
     chosen_tools = []
     if topic_data.get("tool"):
-        chosen_tools.append(topic_data["tool"].strip().lower())
+        chosen_tools.append(topic_data["tool"].strip())
     if topic_data.get("todays_pick_tool"):
-        chosen_tools.append(topic_data["todays_pick_tool"].strip().lower())
-    overlap = today_tools.intersection(set(chosen_tools))
-    if overlap:
-        log.warning(f"  🚫 오늘 이미 다룬 도구 선택됨: {overlap} → 강제 재시도")
+        chosen_tools.append(topic_data["todays_pick_tool"].strip())
+
+    forbidden_reasons = []
+    for tool in chosen_tools:
+        tl = tool.lower()
+        if not tl:
+            continue
+        if tl in today_tools:
+            forbidden_reasons.append(f"{tool} (히스토리에 오늘 발행됨)")
+            continue
+        for title in today_titles:
+            if tl in title.lower():
+                forbidden_reasons.append(f'{tool} (오늘 Blogger 제목에 등장: "{title}")')
+                break
+
+    if forbidden_reasons:
+        log.warning(f"  🚫 오늘 이미 다룬 도구 선택됨 → 강제 재시도: {forbidden_reasons}")
+        forbidden_tool_list = ", ".join(set(chosen_tools))
         retry_prompt = (
             prompt
-            + f"\n\n## ⛔⛔⛔ 강제 재시도\n"
-            + f"방금 너는 {', '.join(overlap)} 를 선택했는데 이 도구는 오늘 이미 발행됐다.\n"
-            + "절대 같은 도구 선택 금지. 위 도구 우선순위 목록에서 다른 도구로 즉시 변경.\n"
+            + "\n\n## ⛔⛔⛔ 강제 재시도 (이전 응답 거부됨)\n"
+            + f"방금 너는 {forbidden_tool_list} 를 선택했는데 이 도구는 오늘 이미 발행됐다.\n"
+            + "차단 사유:\n"
+            + "\n".join(f"  - {r}" for r in forbidden_reasons)
+            + "\n절대 같은 도구 선택 금지. 위 도구 우선순위 목록에서 완전히 다른 도구로 즉시 변경.\n"
+            + "Claude/Anthropic 계열도 완전히 다른 도구로 변경 (Claude 4.x 어떤 버전이든 차단).\n"
         )
         topic_data = call_claude(retry_prompt, max_tokens=1200)
 
@@ -1234,7 +1278,7 @@ def main():
             f"+ Blogger 포스트 {len(blogger_posts)}개 로드"
         )
 
-        topic_data = decide_topic(track, avoid_context, tool_name)
+        topic_data = decide_topic(track, avoid_context, tool_name, blogger_posts=blogger_posts)
         deep_news  = collect_deep_news(topic_data)
         post_data  = generate_post(track, topic_data, deep_news)
         best_title = select_best_title(post_data)
