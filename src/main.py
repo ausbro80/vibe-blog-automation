@@ -43,6 +43,11 @@ GEMINI_API_KEY     = os.environ["GEMINI_API_KEY"]
 BLOGGER_BLOG_ID    = os.environ["BLOGGER_BLOG_ID"]
 GOOGLE_CREDENTIALS = os.environ["GOOGLE_CREDENTIALS_JSON"]
 
+# v6.7.3: 썸네일 Cloudinary 업로더용 (imgur 불안정 대체)
+CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
+CLOUDINARY_API_KEY    = os.environ.get("CLOUDINARY_API_KEY", "")
+CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
+
 # v6.7.1: workflow_dispatch의 dry_run 입력 처리.
 # true 면 Blogger는 isDraft=True (URL 비공개), 인스타/유튜브/Threads 전체 스킵.
 DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
@@ -951,39 +956,86 @@ def generate_image_prompt(title: str, post_data: dict) -> str:
 
 
 def generate_thumbnail(image_prompt: str) -> str:
+    """v6.7.3: 3회 재시도. 이전엔 1회 실패 = 즉시 플레이스홀더."""
     log.info("🎨 썸네일 생성 중...")
     enhanced = (
         f"{image_prompt}, modern flat illustration, vibrant colors, "
         "16:9 blog thumbnail, no text no letters, professional tech design"
     )
-    try:
-        url = (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-2.5-flash-image:generateContent?key={GEMINI_API_KEY}"
-        )
-        payload = {
-            "contents": [{"parts": [{"text": enhanced}]}],
-            "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]},
-        }
-        resp = requests.post(url, json=payload, timeout=90)
-        resp.raise_for_status()
-        for part in resp.json()["candidates"][0]["content"]["parts"]:
-            if "inlineData" in part:
-                log.info("  ✅ 이미지 생성 완료")
-                return part["inlineData"]["data"]
-    except Exception as e:
-        log.warning(f"  ⚠️ 이미지 생성 실패 ({e})")
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"gemini-2.5-flash-image:generateContent?key={GEMINI_API_KEY}"
+    )
+    payload = {
+        "contents": [{"parts": [{"text": enhanced}]}],
+        "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]},
+    }
+    for attempt in range(3):
+        try:
+            resp = requests.post(url, json=payload, timeout=90)
+            resp.raise_for_status()
+            for part in resp.json()["candidates"][0]["content"]["parts"]:
+                if "inlineData" in part:
+                    log.info(f"  ✅ 이미지 생성 완료 (시도 {attempt+1})")
+                    return part["inlineData"]["data"]
+            log.warning(f"  ⚠️ 이미지 생성 응답에 inlineData 없음 (시도 {attempt+1}/3)")
+        except Exception as e:
+            log.warning(f"  ⚠️ 이미지 생성 실패 (시도 {attempt+1}/3): {e}")
+        if attempt < 2:
+            wait = 20 * (attempt + 1)
+            time.sleep(wait)
+    log.error("  ❌ 이미지 생성 3회 모두 실패")
     return ""
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 6: 이미지 업로드
+# STEP 6: 이미지 업로드 (v6.7.3: Cloudinary 우선 → imgur 폴백)
 # ═════════════════════════════════════════════════════════════════════════════
+def upload_image_to_cloudinary(image_b64: str) -> str:
+    """v6.7.3: 기존 youtube_shorts/instagram에서 쓰는 Cloudinary 계정 재사용."""
+    if not image_b64:
+        return ""
+    if not all([CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET]):
+        log.info("  ℹ️  Cloudinary 자격증명 없음 → imgur로 시도")
+        return ""
+    try:
+        import hashlib
+        import base64 as _b64
+        log.info("☁️  이미지 Cloudinary 업로드 중...")
+        timestamp = str(int(time.time()))
+        public_id = f"vibe_school/blog_thumb_{timestamp}"
+        params_to_sign = f"public_id={public_id}&timestamp={timestamp}"
+        signature = hashlib.sha1(
+            (params_to_sign + CLOUDINARY_API_SECRET).encode("utf-8")
+        ).hexdigest()
+        image_bytes = _b64.b64decode(image_b64)
+        resp = requests.post(
+            f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD_NAME}/image/upload",
+            data={
+                "public_id": public_id,
+                "timestamp": timestamp,
+                "api_key": CLOUDINARY_API_KEY,
+                "signature": signature,
+            },
+            files={"file": ("thumb.png", image_bytes, "image/png")},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        img_url = resp.json().get("secure_url", "")
+        if img_url:
+            log.info(f"  ✅ Cloudinary 업로드 완료: {img_url[:70]}...")
+        return img_url
+    except Exception as e:
+        log.warning(f"  ⚠️ Cloudinary 업로드 실패 ({e})")
+        return ""
+
+
 def upload_image_to_imgur(image_b64: str) -> str:
+    """폴백. 공개 Client-ID는 rate-limit 잘 걸림."""
     if not image_b64:
         return ""
     try:
-        log.info("☁️  이미지 imgur 업로드 중...")
+        log.info("☁️  이미지 imgur 업로드 중 (폴백)...")
         resp = requests.post(
             "https://api.imgur.com/3/image",
             headers={"Authorization": "Client-ID 546c25a59c58ad7"},
@@ -1000,6 +1052,11 @@ def upload_image_to_imgur(image_b64: str) -> str:
     except Exception as e:
         log.warning(f"  ⚠️ imgur 업로드 실패 ({e})")
         return ""
+
+
+def upload_thumbnail(image_b64: str) -> str:
+    """Cloudinary 우선, 실패 시 imgur 폴백."""
+    return upload_image_to_cloudinary(image_b64) or upload_image_to_imgur(image_b64)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1165,7 +1222,10 @@ def post_to_blogger(
 ) -> str:
     log.info("📤 Blogger 포스팅 중...")
     if not image_url:
-        image_url = "https://placehold.co/1200x630/6366f1/ffffff?text=Vibe+Coding+School"
+        # v6.7.3: 제목 기반 동적 플레이스홀더 (기존엔 "Vibe Coding School" 고정)
+        from urllib.parse import quote
+        safe_title = quote((title or "Vibe Coding School")[:40])
+        image_url = f"https://placehold.co/1200x630/6366f1/ffffff?text={safe_title}"
 
     year = datetime.now().year
     blogger_posts = blogger_posts or []
@@ -1286,7 +1346,9 @@ def main():
 
         image_prompt = generate_image_prompt(best_title, post_data)
         image_b64    = generate_thumbnail(image_prompt)
-        image_url    = upload_image_to_imgur(image_b64)
+        image_url    = upload_thumbnail(image_b64)  # v6.7.3: Cloudinary 우선 → imgur 폴백
+        if not image_url:
+            log.warning("  ⚠️ 이미지 URL 획득 실패 → 플레이스홀더 사용")
 
         blog_url = post_to_blogger(
             best_title, post_data, image_url,
