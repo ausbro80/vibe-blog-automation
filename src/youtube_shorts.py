@@ -1,6 +1,15 @@
 """
-바이브코딩 스쿨 — YouTube Shorts 자동화 v3.4
+바이브코딩 스쿨 — YouTube Shorts 자동화 v4.0
 ─────────────────────────────────────────
+v4.0 변경사항 (도달률·블로그 유입 최적화):
+  - 인트로 로고/나레이션 제거 → 첫 프레임부터 후크 (retention +20~40%)
+  - 아웃로 나레이션 → 무음 1.5초 블로그 CTA 끝카드 (TTS 1회 절감)
+  - Card 1 후크 4공식 강제, hook_keyword 필드로 큰 자막 최적화
+  - 자막 폰트 48 → 60pt (무음 시청자 가독성)
+  - TTS 1.1x → 1.18x (쇼츠 평균 retention 최적)
+  - 릴스 캡션 분리 (#Shorts 제거, niche 해시태그, 블로그 CTA 첫 줄)
+  - 채널별 태그 분리 (youtube_tags 광범위, reels_tags niche)
+
 v3.4 변경사항:
   - 릴스 썸네일 고정: 카드1 프레임을 Cloudinary 업로드 후 cover_url로 지정
   - create_shorts_video() 반환값 tuple(video_path, card1_frame) 로 변경
@@ -41,8 +50,9 @@ CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
 
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-INTRO_SCRIPT = "안녕하세요 바이브코딩스쿨이에요. 빠르게 30초만 집중하세요!"
-OUTRO_SCRIPT = "더 자세한 내용은 설명란 링크에서 확인하세요. 구독하면 매일 이런 정보 받을 수 있어요!"
+END_CARD_LINE1 = "블로그에서 전체 보기"
+END_CARD_LINE2 = "설명란 링크 ↓"
+END_CARD_DURATION = 1.5
 
 W, H = 1080, 1920
 LOGO_PATH  = os.path.join(os.path.dirname(__file__), "logo.png")
@@ -98,55 +108,60 @@ def generate_card_scripts(title: str, content_html: str, blog_url: str, num_card
 
     response = claude.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=2000,
+        max_tokens=2200,
         messages=[{
             "role": "user",
-            "content": f"""아래 블로그 글을 유튜브 쇼츠용 카드 {num_cards}장으로 만들어줘.
+            "content": f"""아래 블로그를 유튜브 쇼츠/인스타 릴스용 카드 {num_cards}장으로 변환해줘.
+2026년 기준 (2024/2025 언급 금지).
 
 블로그 제목: {title}
-작성 날짜: 2026년 (반드시 2026년 기준으로 작성)
 블로그 본문:
 {text}
 
-## 카드 구성 원칙
-- 카드 1 (훅): 영상 첫 3초가 전부예요. 아래 중 하나로 시작하세요.
-  충격 수치 예) 월 20달러 AI가 갑자기 200달러가 됐어요
-  반전 질문 예) 이거 모르면 AI 비용 10배 더 내고 있어요
-  직접 호명 예) AI 쓰는 직장인이라면 꼭 보세요
-  절대 인사말로 시작 금지! 바로 핵심 정보로 시작하세요.
-- 카드 2~4: 블로그 핵심 내용에서 가장 임팩트 있는 정보 3가지
-  - 구체적인 수치, 실제 사례, 실용적인 팁 위주로
-  - 단순 요약 금지, 독자가 오 이거 몰랐다 할 내용으로
-- 카드 5: 핵심 요약 한 줄 + 설명란 링크에서 더 보세요 유도
+블로그 URL: {blog_url}
 
-## 나레이션 원칙
-- 반드시 2026년 기준으로 작성 (2024년, 2025년 언급 금지)
-- 카드 1은 인사말 절대 금지, 핵심 정보로 바로 시작
-- 각 카드 나레이션은 3~4초 분량 (50~70자)
-- 친근하고 빠릿한 말투 (~해요, ~거예요)
-- 정보가 구체적이고 실용적이어야 함
-- 블로그에 명시된 수치만 사용, 없는 내용 창작 금지
-- 말하듯이 자연스럽게 써주세요. 문어체 금지!
-- 짧고 끊어서 써주세요. 한 문장에 정보 하나만!
+## 5카드 구조 (절대 규칙)
+- 카드 1 = 후크. 첫 1.5초가 전부. 아래 4가지 후크 공식 중 정확히 1개 선택.
+  ① 충격 수치   예) 월 20달러가 갑자기 200달러로
+  ② 반전 질문   예) 아직도 ChatGPT로 코딩하세요?
+  ③ 직접 호명   예) AI 쓰는 직장인이라면 꼭 보세요
+  ④ 비밀 폭로   예) 이거 모르면 4시간씩 낭비합니다
+  → 인사말 절대 금지. 35~45자.
+  → hook_keyword: 후크의 핵심 ≤8자. 큰 자막에 띄울 단어. 예) "200달러", "4시간 낭비", "꼭 보세요"
+- 카드 2~4 = 본문. 블로그에서 가장 임팩트 있는 정보 3가지.
+  - 구체 수치/실제 사례/실용 팁. "오 이거 몰랐다" 할 내용.
+  - 단순 요약 금지. 55~65자.
+- 카드 5 = 블로그 유입 CTA (가장 중요). 한 줄 요약 + 블로그 유도.
+  - 반드시 "블로그", "설명란", "링크" 중 1개 이상 포함.
+  - 예) "전체 가이드는 블로그에서 보세요. 설명란 링크예요"
 
-## 이미지 프롬프트 원칙
-- 각 카드 내용을 시각적으로 표현하는 장면
-- 구체적이고 생생한 묘사 (추상적 금지)
-- 영문 50단어 이내
+## 작성 규칙
+- 친근한 ~해요 ~거예요 말투. 문어체 금지.
+- 한 문장에 정보 1개. 짧게 끊어서.
+- 블로그에 명시된 수치만 사용. 창작 금지.
+- 카드별 image_prompt: 영문 ≤50단어. 구체적이고 생생한 장면.
 
-JSON만 출력 (코드블록 없이):
+## 채널별 메타데이터
+- youtube_title: ≤40자. 클릭 유발 형. **#Shorts 반드시 포함**.
+- youtube_description: ≤150자. 후크 첫 줄 + 핵심 한 줄. (블로그 URL은 코드가 자동 추가)
+- youtube_tags: 광범위 한국어 5개. 예) ["AI코딩", "바이브코딩", "Cursor", "Claude", "AI도구"]
+- reels_caption: 300~450자. 첫 줄 = 후크 한 문장. 본문 3~5줄 핵심 요약(줄바꿈 활용). 마지막 줄 = "전체 가이드는 블로그에서 보세요 ↓ {blog_url}". **#Shorts 절대 금지**. 이모지 0개.
+- reels_tags: niche 한국어 4~5개. **#Shorts 절대 금지**. 예) ["#AI개발자", "#바이브코딩스쿨", "#Cursor사용법", "#자동화코딩"]
+
+## 출력 (JSON만, 코드블록 없이)
 {{
   "cards": [
-    {{
-      "card": 1,
-      "title": "제목 10자 이내",
-      "script": "구체적이고 임팩트 있는 나레이션 50~70자",
-      "image_prompt": "specific vivid English image prompt"
-    }}
+    {{"card": 1, "hook_type": "①|②|③|④", "hook_keyword": "≤8자", "title": "≤10자", "script": "후크 35~45자", "image_prompt": "vivid English ≤50 words"}},
+    {{"card": 2, "title": "≤10자", "script": "55~65자", "image_prompt": "..."}},
+    {{"card": 3, "title": "≤10자", "script": "55~65자", "image_prompt": "..."}},
+    {{"card": 4, "title": "≤10자", "script": "55~65자", "image_prompt": "..."}},
+    {{"card": 5, "title": "≤10자", "script": "55~65자 + 블로그/설명란/링크 포함", "image_prompt": "..."}}
   ],
-  "youtube_title": "쇼츠 제목 40자 이내 #Shorts 포함",
-  "youtube_description": "설명 150자 이내",
-  "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"]
+  "youtube_title": "쇼츠 제목 ≤40자 #Shorts 포함",
+  "youtube_description": "≤150자",
+  "youtube_tags": ["광범위 태그 5개"],
+  "reels_caption": "300~450자 본문",
+  "reels_tags": ["#niche 4~5개"]
 }}"""
         }]
     )
@@ -160,6 +175,18 @@ JSON만 출력 (코드블록 없이):
                 break
     meta = json.loads(raw)
     meta["youtube_description"] = meta["youtube_description"] + f"\n\n🔗 {blog_url}"
+
+    # 하위 호환: 구버전 응답에 신규 필드 없으면 합리적 기본값 채움
+    if "youtube_tags" not in meta:
+        meta["youtube_tags"] = meta.get("tags", ["AI코딩", "바이브코딩", "Cursor", "Claude", "Shorts"])
+    if "reels_tags" not in meta:
+        meta["reels_tags"] = ["#AI개발자", "#바이브코딩스쿨", "#Cursor사용법", "#자동화코딩"]
+    if "reels_caption" not in meta:
+        meta["reels_caption"] = (
+            f"{title}\n\n"
+            f"전체 가이드는 블로그에서 보세요 ↓\n{blog_url}"
+        )
+
     log.info("  ✅ 카드별 스크립트 생성 완료")
     return meta
 
@@ -269,10 +296,10 @@ def make_card_frame(image_bytes: bytes, title: str, subtitle: str) -> bytes:
             y += line_h
 
     if subtitle:
-        font_sub = load_font(48, bold=True)
+        font_sub = load_font(60, bold=True)
         sub_overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         sub_draw = ImageDraw.Draw(sub_overlay)
-        sub_draw.rectangle([0, H - 340, W, H], fill=(0, 0, 0, 200))
+        sub_draw.rectangle([0, H - 380, W, H], fill=(0, 0, 0, 215))
         img = Image.alpha_composite(img.convert("RGBA"), sub_overlay).convert("RGB")
         draw = ImageDraw.Draw(img)
         words = subtitle.split()
@@ -287,14 +314,14 @@ def make_card_frame(image_bytes: bytes, title: str, subtitle: str) -> bytes:
                 current = test
         if current:
             lines.append(current)
-        y = H - 320
+        y = H - 360
         for line in lines[:2]:
             bbox = draw.textbbox((0, 0), line, font=font_sub)
             x = (W - (bbox[2] - bbox[0])) // 2
-            for dx, dy in [(-2,-2),(2,-2),(-2,2),(2,2)]:
+            for dx, dy in [(-3,-3),(3,-3),(-3,3),(3,3)]:
                 draw.text((x+dx, y+dy), line, font=font_sub, fill=(0,0,0))
             draw.text((x, y), line, font=font_sub, fill=(255, 230, 0))
-            y += bbox[3] - bbox[1] + 8
+            y += bbox[3] - bbox[1] + 12
 
     buf = BytesIO()
     img.save(buf, format="PNG")
@@ -302,9 +329,10 @@ def make_card_frame(image_bytes: bytes, title: str, subtitle: str) -> bytes:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 4: 인트로/아웃트로 프레임 생성
+# STEP 4: 무음 블로그 유입 끝카드 (v4.0: 인트로 제거, 아웃로 나레이션 제거)
 # ═════════════════════════════════════════════════════════════════════════════
-def make_intro_frame() -> bytes:
+def make_end_card_frame() -> bytes:
+    """무음 1.5초로 끝에 붙는 블로그 CTA 카드. TTS 호출 0회."""
     img = Image.new("RGB", (W, H), color=(10, 10, 20))
     draw = ImageDraw.Draw(img)
     for y in range(H):
@@ -313,44 +341,53 @@ def make_intro_frame() -> bytes:
         g = int(0 + (20 - 0) * t)
         b = int(60 + (120 - 60) * t)
         draw.line([(0, y), (W, y)], fill=(r, g, b))
-    logo_file = LOGO_PATH2 if os.path.exists(LOGO_PATH2) else LOGO_PATH
-    if os.path.exists(logo_file):
-        try:
-            logo = Image.open(logo_file).convert("RGBA")
-            logo_w = 800
-            ratio = logo_w / logo.width
-            logo_h = int(logo.height * ratio)
-            logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
-            img.paste(logo, ((W - logo_w) // 2, (H - logo_h) // 2 - 80), logo)
-        except Exception as e:
-            log.warning(f"  ⚠️ 인트로 로고 삽입 실패: {e}")
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
 
-
-def make_outro_frame() -> bytes:
-    img = Image.new("RGB", (W, H), color=(10, 10, 20))
-    draw = ImageDraw.Draw(img)
-    for y in range(H):
-        t = y / H
-        r = int(30 + (80 - 30) * t)
-        g = int(0 + (20 - 0) * t)
-        b = int(60 + (120 - 60) * t)
-        draw.line([(0, y), (W, y)], fill=(r, g, b))
+    # 로고 상단
     if os.path.exists(LOGO_PATH):
         try:
             logo = Image.open(LOGO_PATH).convert("RGBA")
-            logo_w = 700
+            logo_w = 500
             ratio = logo_w / logo.width
             logo_h = int(logo.height * ratio)
             logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
-            img.paste(logo, ((W - logo_w) // 2, (H - logo_h) // 2 - 100), logo)
+            img.paste(logo, ((W - logo_w) // 2, 280), logo)
         except Exception as e:
-            log.warning(f"  ⚠️ 아웃트로 로고 삽입 실패: {e}")
+            log.warning(f"  ⚠️ 끝카드 로고 삽입 실패: {e}")
+
+    # CTA 메인 카피 (큰 글씨, 노란색)
+    font_main = load_font(120, bold=True)
+    bbox = draw.textbbox((0, 0), END_CARD_LINE1, font=font_main)
+    x = (W - (bbox[2] - bbox[0])) // 2
+    y = H // 2 - 60
+    for dx, dy in [(-4,-4),(4,-4),(-4,4),(4,4)]:
+        draw.text((x+dx, y+dy), END_CARD_LINE1, font=font_main, fill=(0,0,0))
+    draw.text((x, y), END_CARD_LINE1, font=font_main, fill=(255, 230, 0))
+
+    # 서브 카피 (설명란 링크 안내)
+    font_sub = load_font(72, bold=True)
+    bbox = draw.textbbox((0, 0), END_CARD_LINE2, font=font_sub)
+    x = (W - (bbox[2] - bbox[0])) // 2
+    y = H // 2 + 120
+    for dx, dy in [(-3,-3),(3,-3),(-3,3),(3,3)]:
+        draw.text((x+dx, y+dy), END_CARD_LINE2, font=font_sub, fill=(0,0,0))
+    draw.text((x, y), END_CARD_LINE2, font=font_sub, fill=(255, 255, 255))
+
     buf = BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
+
+
+def make_silent_audio(duration: float, path: Path) -> Path:
+    """TTS와 동일 포맷(24kHz mono LINEAR16)으로 무음 WAV 생성. concat 호환."""
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-f", "lavfi",
+        "-i", "anullsrc=channel_layout=mono:sample_rate=24000",
+        "-t", str(duration),
+        "-c:a", "pcm_s16le",
+        str(path),
+    ], capture_output=True)
+    return path
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -367,7 +404,7 @@ def generate_voice(script: str) -> bytes:
         },
         "audioConfig": {
             "audioEncoding": "LINEAR16",
-            "speakingRate": 1.1,
+            "speakingRate": 1.18,
             "sampleRateHertz": 24000,
         },
     }
@@ -434,14 +471,7 @@ def create_shorts_video(card_scripts: list, title: str) -> tuple:
         tmpdir = Path(tmpdir)
         segments = []
 
-        log.info("  🎬 인트로 생성 중...")
-        intro_img_path = tmpdir / "intro.png"
-        intro_img_path.write_bytes(make_intro_frame())
-        intro_audio_bytes = generate_voice(INTRO_SCRIPT)
-        intro_audio_path = save_voice_as_wav(intro_audio_bytes, tmpdir / "intro_audio.wav")
-        intro_video = tmpdir / "intro.mp4"
-        make_video_segment(intro_img_path, intro_audio_path, intro_video)
-        segments.append(intro_video)
+        # v4.0: 인트로 로고/나레이션 제거. 첫 프레임 = 카드1 후크.
 
         for i, card_data in enumerate(card_scripts):
             log.info(f"  🎬 카드 {i+1} 세그먼트 생성 중...")
@@ -467,14 +497,14 @@ def create_shorts_video(card_scripts: list, title: str) -> tuple:
             make_video_segment(card_img_path, card_audio_path, card_video)
             segments.append(card_video)
 
-        log.info("  🎬 아웃트로 생성 중...")
-        outro_img_path = tmpdir / "outro.png"
-        outro_img_path.write_bytes(make_outro_frame())
-        outro_audio_bytes = generate_voice(OUTRO_SCRIPT)
-        outro_audio_path = save_voice_as_wav(outro_audio_bytes, tmpdir / "outro_audio.wav")
-        outro_video = tmpdir / "outro.mp4"
-        make_video_segment(outro_img_path, outro_audio_path, outro_video)
-        segments.append(outro_video)
+        # v4.0: 아웃로 나레이션 제거. 무음 1.5초 블로그 CTA 끝카드로 교체 (TTS 1회 절감).
+        log.info("  🎬 끝카드 생성 중 (무음 블로그 CTA)...")
+        end_img_path = tmpdir / "end.png"
+        end_img_path.write_bytes(make_end_card_frame())
+        end_audio_path = make_silent_audio(END_CARD_DURATION, tmpdir / "end_audio.wav")
+        end_video = tmpdir / "end.mp4"
+        make_video_segment(end_img_path, end_audio_path, end_video)
+        segments.append(end_video)
 
         log.info("  🔗 세그먼트 합치는 중...")
         concat_list = tmpdir / "concat.txt"
@@ -531,18 +561,32 @@ def upload_video_to_cloudinary(video_path: str) -> str:
 # STEP 7-2: 인스타그램 릴스 업로드 ✅ v3.4: cover_url 추가
 # ═════════════════════════════════════════════════════════════════════════════
 def upload_to_instagram_reels(video_url: str, title: str, blog_url: str,
-                               cover_url: str = "") -> str:
+                               cover_url: str = "",
+                               reels_caption: str = "",
+                               reels_tags: list = None) -> str:
     log.info("📱 인스타그램 릴스 업로드 중...")
     if not INSTAGRAM_TOKEN or not INSTAGRAM_ACCOUNT_ID:
         log.warning("  ⚠️ 인스타그램 토큰/계정 없음 → 릴스 스킵")
         return ""
 
     base = "https://graph.instagram.com/v25.0"
-    caption = (
-        title + "\n\n"
-        "블로그에서 더 보기: " + blog_url + "\n\n"
-        "#바이브코딩 #AI코딩 #Shorts #바이브코딩스쿨"
-    )
+
+    # v4.0: 릴스 전용 캡션 + niche 해시태그. #Shorts 절대 금지 (IG 알고리즘 페널티).
+    if reels_caption:
+        body = reels_caption
+    else:
+        body = (
+            title + "\n\n"
+            "전체 가이드는 블로그에서 보세요 ↓\n" + blog_url
+        )
+
+    tags = reels_tags or ["#AI개발자", "#바이브코딩스쿨", "#Cursor사용법", "#자동화코딩"]
+    # # 누락 방어
+    tags = [t if t.startswith("#") else "#" + t for t in tags]
+    # IG 정책상 #Shorts 등 무관 플랫폼 태그 자동 제거
+    tags = [t for t in tags if t.lower() not in ("#shorts", "#youtubeshorts", "#youtube")]
+
+    caption = body + "\n\n" + " ".join(tags)
 
     payload = {
         "media_type": "REELS",
@@ -607,11 +651,17 @@ def upload_to_youtube(video_path: str, meta: dict) -> str:
     if not creds.valid:
         creds.refresh(google_requests.Request())
     youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
+    # v4.0: youtube_tags 우선, 없으면 구버전 tags 사용
+    yt_tags = meta.get("youtube_tags") or meta.get("tags", [])
+    # 중복 제거하며 광범위 태그 보강
+    base_tags = ["바이브코딩", "Shorts", "AI코딩"]
+    merged_tags = list(dict.fromkeys(yt_tags + base_tags))
+
     body = {
         "snippet": {
             "title": meta["youtube_title"],
             "description": meta["youtube_description"],
-            "tags": meta.get("tags", []) + ["바이브코딩", "Shorts", "AI코딩"],
+            "tags": merged_tags,
             "categoryId": "28",
             "defaultLanguage": "ko",
         },
@@ -680,7 +730,9 @@ def post_youtube_shorts(
             video_public_url = upload_video_to_cloudinary(video_path)
             reels_url = upload_to_instagram_reels(
                 video_public_url, title, blog_url,
-                cover_url=cover_url,  # ✅ 썸네일 전달
+                cover_url=cover_url,           # 카드1 썸네일
+                reels_caption=meta.get("reels_caption", ""),  # v4.0 릴스 전용 캡션
+                reels_tags=meta.get("reels_tags"),            # v4.0 niche 해시태그
             )
         except Exception as e:
             log.warning(f"  ⚠️ 인스타 릴스 실패: {e}")

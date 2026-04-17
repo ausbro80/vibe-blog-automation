@@ -318,7 +318,8 @@ def add_to_history(history: dict, title: str, topic: str, tool: str, track: str)
     save_history(history)
 
 
-def get_blogger_recent_titles(max_results: int = 20) -> list[str]:
+def get_blogger_recent_posts(max_results: int = 20) -> list[dict]:
+    """v6.7: 제목 + URL + 게시일 함께 반환 (내부 링크 섹션용)."""
     try:
         creds_info = json.loads(GOOGLE_CREDENTIALS)
         creds = Credentials(
@@ -332,18 +333,22 @@ def get_blogger_recent_titles(max_results: int = 20) -> list[str]:
         result = service.posts().list(
             blogId=BLOGGER_BLOG_ID,
             maxResults=max_results,
-            fields="items(title)",
+            fields="items(title,url,published)",
             fetchBodies=False,
         ).execute()
-        titles = [item["title"] for item in result.get("items", [])]
-        log.info(f"  📋 최근 Blogger 포스트 {len(titles)}개 제목 수집 완료")
-        return titles
+        items = result.get("items", [])
+        posts = [
+            {"title": it["title"], "url": it.get("url", ""), "published": it.get("published", "")}
+            for it in items
+        ]
+        log.info(f"  📋 최근 Blogger 포스트 {len(posts)}개 (제목+URL) 수집 완료")
+        return posts
     except Exception as e:
-        log.warning(f"  ⚠️ Blogger 최근 제목 수집 실패: {e}")
+        log.warning(f"  ⚠️ Blogger 최근 포스트 수집 실패: {e}")
         return []
 
 
-def build_avoid_context(history: dict, blogger_titles: list[str]) -> str:
+def build_avoid_context(history: dict, blogger_posts: list[dict]) -> str:
     lines = []
 
     lines.append(build_date_block_section(history))
@@ -369,10 +374,10 @@ def build_avoid_context(history: dict, blogger_titles: list[str]) -> str:
                 f"- [{p['track']}] {p['date']} | {p.get('tool','?')} | {p['title']}"
             )
 
-    if blogger_titles:
+    if blogger_posts:
         lines.append("\n## 블로그 기존 포스트 제목 전체 (유사 각도·주제 금지)")
-        for t in blogger_titles:
-            lines.append(f"- {t}")
+        for p in blogger_posts:
+            lines.append(f"- {p['title']}")
 
     lines.append("""
 ## ⛔ 중복 판단 기준
@@ -687,7 +692,7 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 - 마크다운 절대 금지, 굵게는 <strong> 태그
 - 완성된 HTML만 출력
 """
-    content_html = call_claude_raw(html_prompt, max_tokens=8000)
+    content_html = call_claude_raw(html_prompt, max_tokens=5000)
 
     if content_html.startswith("```"):
         lines = content_html.split("\n")
@@ -720,6 +725,12 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 - 총 3~5개
 - 필수: Claude, 바이브코딩, AI코딩, 앱개발, AI자동화, AI에이전트, 초보자가이드 중 1~2개
 
+## FAQ 규칙 (v6.7 추가 — Google FAQ 리치결과 노출용)
+- 본문 내용 기반 자주 묻는 질문 정확히 3개
+- 각 질문은 실제 검색 의도 반영 (예: "~방법", "~비용", "~차이")
+- 답변은 1~2문장, 60~120자
+- 본문에 명시된 사실만 사용
+
 JSON만 출력:
 {{
   "title_candidates": [
@@ -731,10 +742,15 @@ JSON만 출력:
   ],
   "meta_description": "메타설명 150자 이내",
   "tags": ["태그1", "태그2", "태그3"],
-  "slug": "seo-english-slug-{year}"
+  "slug": "seo-english-slug-{year}",
+  "faq": [
+    {{"q": "질문1", "a": "답변1 (60~120자)"}},
+    {{"q": "질문2", "a": "답변2 (60~120자)"}},
+    {{"q": "질문3", "a": "답변3 (60~120자)"}}
+  ]
 }}
 """
-    meta_data = call_claude(meta_prompt, max_tokens=800)
+    meta_data = call_claude(meta_prompt, max_tokens=1100)
     meta_data["content_html"] = content_html
     log.info("  ✅ 메타데이터 생성 완료")
     return meta_data
@@ -911,18 +927,194 @@ def get_blogger_service():
     return build("blogger", "v3", credentials=creds)
 
 
-def post_to_blogger(title: str, post_data: dict, image_url: str) -> str:
+# ═════════════════════════════════════════════════════════════════════════════
+# v6.7 SEO 헬퍼들
+# ═════════════════════════════════════════════════════════════════════════════
+def build_toc_html(content_html: str) -> str:
+    """본문 h2 태그를 파싱해서 목차 박스 생성. 매칭 없으면 빈 문자열."""
+    import re
+    h2_matches = re.findall(r'<h2[^>]*>(.*?)</h2>', content_html, re.DOTALL)
+    h2_titles = [re.sub(r'<[^>]+>', '', h).strip() for h in h2_matches]
+    h2_titles = [t for t in h2_titles if t]
+    if len(h2_titles) < 2:
+        return ""
+
+    items = "\n".join(
+        f'    <li style="margin:6px 0;color:#374151;">{t}</li>'
+        for t in h2_titles
+    )
+    return f"""
+<div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:12px;padding:18px 22px;margin:24px 0;">
+  <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:#6366F1;">📑 이 글의 목차</p>
+  <ol style="margin:0;padding-left:20px;font-size:14px;line-height:1.8;">
+{items}
+  </ol>
+</div>
+"""
+
+
+def build_internal_links_html(blogger_posts: list[dict], current_title: str, count: int = 5) -> str:
+    """본문 끝 '함께 읽으면 좋은 글' 섹션. 현재 글 제외, 최근 count개."""
+    if not blogger_posts:
+        return ""
+    others = [p for p in blogger_posts if p.get("title") and p.get("url") and p["title"] != current_title]
+    picks = others[:count]
+    if not picks:
+        return ""
+
+    items = "\n".join(
+        f'    <li style="margin:8px 0;"><a href="{p["url"]}" '
+        f'style="color:#4338CA;text-decoration:none;font-weight:500;">→ {p["title"]}</a></li>'
+        for p in picks
+    )
+    return f"""
+<div style="background:#F3F0FF;border-left:4px solid #6366F1;border-radius:0 12px 12px 0;padding:18px 22px;margin:32px 0;">
+  <p style="margin:0 0 10px;font-size:14px;font-weight:700;color:#4338CA;">📚 함께 읽으면 좋은 글</p>
+  <ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.7;">
+{items}
+  </ul>
+</div>
+"""
+
+
+def build_cross_channel_cta_html() -> str:
+    """블로그 → 유튜브/인스타/Threads 크로스채널 유입. 환경변수 누락 시 자동 생략."""
+    yt   = os.environ.get("YOUTUBE_CHANNEL_URL", "")
+    ig   = os.environ.get("INSTAGRAM_PROFILE_URL", "")
+    th   = os.environ.get("THREADS_PROFILE_URL", "")
+    links = []
+    if yt:
+        links.append(f'<a href="{yt}" style="color:#fff;text-decoration:none;font-weight:600;background:#FF0000;padding:8px 14px;border-radius:6px;display:inline-block;margin:4px;">▶ YouTube 쇼츠</a>')
+    if ig:
+        links.append(f'<a href="{ig}" style="color:#fff;text-decoration:none;font-weight:600;background:#E4405F;padding:8px 14px;border-radius:6px;display:inline-block;margin:4px;">📸 Instagram</a>')
+    if th:
+        links.append(f'<a href="{th}" style="color:#fff;text-decoration:none;font-weight:600;background:#000;padding:8px 14px;border-radius:6px;display:inline-block;margin:4px;">🧵 Threads</a>')
+    if not links:
+        return ""
+    return f"""
+<div style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:20px;margin:24px 0;text-align:center;">
+  <p style="margin:0 0 12px;font-size:14px;font-weight:700;color:#1E1B4B;">📱 같은 내용을 영상·카드뉴스로도 보세요</p>
+  <div>{' '.join(links)}</div>
+</div>
+"""
+
+
+def build_faq_html_and_jsonld(faq: list[dict]) -> tuple[str, str]:
+    """FAQ 섹션 HTML + FAQ Page JSON-LD (Google 리치결과용)."""
+    if not faq:
+        return "", ""
+    items_html = []
+    for i, qa in enumerate(faq):
+        q = qa.get("q", "").strip()
+        a = qa.get("a", "").strip()
+        if not q or not a:
+            continue
+        items_html.append(f"""
+  <details style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;padding:14px 18px;margin:10px 0;">
+    <summary style="font-weight:700;color:#1E1B4B;cursor:pointer;font-size:15px;">Q. {q}</summary>
+    <p style="margin:10px 0 0;color:#374151;font-size:14px;line-height:1.7;">A. {a}</p>
+  </details>""")
+    if not items_html:
+        return "", ""
+
+    faq_html = f"""
+<div style="margin:32px 0;">
+  <h2 style="font-size:18px;font-weight:700;color:#1E1B4B;margin:32px 0 16px;padding-bottom:8px;border-bottom:2px solid #6366F1;">자주 묻는 질문</h2>
+{''.join(items_html)}
+</div>
+"""
+
+    valid_qa = [qa for qa in faq if qa.get("q") and qa.get("a")]
+    main_entity = [
+        {
+            "@type": "Question",
+            "name": qa["q"].strip(),
+            "acceptedAnswer": {"@type": "Answer", "text": qa["a"].strip()},
+        }
+        for qa in valid_qa
+    ]
+    jsonld = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": main_entity,
+    }
+    return faq_html, f'<script type="application/ld+json">{json.dumps(jsonld, ensure_ascii=False)}</script>'
+
+
+def build_article_jsonld(title: str, description: str, image_url: str, blog_url: str = "") -> str:
+    """Article schema. blog_url 비어 있으면 url 필드 생략."""
+    site_name = "바이브코딩 스쿨"
+    obj = {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": title,
+        "description": description or title,
+        "image": [image_url] if image_url else [],
+        "datePublished": datetime.now().isoformat(),
+        "dateModified": datetime.now().isoformat(),
+        "author": {"@type": "Organization", "name": site_name},
+        "publisher": {
+            "@type": "Organization",
+            "name": site_name,
+        },
+    }
+    if blog_url:
+        obj["mainEntityOfPage"] = {"@type": "WebPage", "@id": blog_url}
+    return f'<script type="application/ld+json">{json.dumps(obj, ensure_ascii=False)}</script>'
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Blogger 포스팅 (v6.7 — 내부 링크 + JSON-LD + ToC + FAQ + 크로스채널 CTA)
+# ═════════════════════════════════════════════════════════════════════════════
+def post_to_blogger(
+    title: str,
+    post_data: dict,
+    image_url: str,
+    blogger_posts: list[dict] = None,
+    track: str = "",
+) -> str:
     log.info("📤 Blogger 포스팅 중...")
     if not image_url:
         image_url = "https://placehold.co/1200x630/6366f1/ffffff?text=Vibe+Coding+School"
 
+    year = datetime.now().year
+    blogger_posts = blogger_posts or []
+
+    # SEO 메타 정보
+    description = post_data.get("meta_description", title)
+    tags        = post_data.get("tags", [])
+    faq         = post_data.get("faq", [])
+    content_html = post_data["content_html"]
+
+    # 풍부한 alt
+    alt_track = {"news": "AI 코딩 뉴스", "tool": "AI 도구 가이드", "edu": "AI 코딩 교육"}.get(track, "AI 코딩 가이드")
+    alt_text = f"{title} - 바이브코딩 스쿨 {alt_track} ({year}년)"
+
+    # 섹션별 조립
+    article_jsonld = build_article_jsonld(title, description, image_url)
+    faq_html, faq_jsonld = build_faq_html_and_jsonld(faq)
+    toc_html = build_toc_html(content_html)
+    internal_links_html = build_internal_links_html(blogger_posts, current_title=title, count=5)
+    cross_channel_html  = build_cross_channel_cta_html()
+
     full_html = f"""
+{article_jsonld}
+{faq_jsonld}
+
 <div style="margin-bottom:2rem;">
-  <img src="{image_url}" alt="{title}"
+  <img src="{image_url}" alt="{alt_text}"
        style="width:100%;border-radius:12px;max-height:420px;object-fit:cover;" />
 </div>
 
-{post_data['content_html']}
+{toc_html}
+
+{content_html}
+
+{faq_html}
+
+{cross_channel_html}
+
+{internal_links_html}
 
 <hr style="margin:3rem 0;border:none;border-top:1px solid #eee;" />
 <div style="background:#f0f4ff;padding:1.5rem;border-radius:8px;margin-top:2rem;">
@@ -938,7 +1130,7 @@ def post_to_blogger(title: str, post_data: dict, image_url: str) -> str:
         body={
             "title": title,
             "content": full_html,
-            "labels": post_data.get("tags", []),
+            "labels": tags,
         },
         isDraft=False,
     ).execute()
@@ -963,8 +1155,8 @@ def main():
         log.info(f"  📌 트랙: {track.upper()}")
 
         log.info("📋 히스토리 로드 + 날짜 기반 차단 계산 중...")
-        history        = load_history()
-        blogger_titles = get_blogger_recent_titles(max_results=20)
+        history       = load_history()
+        blogger_posts = get_blogger_recent_posts(max_results=20)
 
         blocked_tools = get_blocked_tools(history)
         if blocked_tools:
@@ -985,10 +1177,10 @@ def main():
                     summary.append(f"{item['tool']}:{item['angle']}")
             log.info(f"  🔒 각도 차단 (최근 {ANGLE_BLOCK_DAYS}일): {', '.join(summary)}")
 
-        avoid_context = build_avoid_context(history, blogger_titles)
+        avoid_context = build_avoid_context(history, blogger_posts)
         log.info(
             f"  ✅ 히스토리 {len(history['posts'])}개 "
-            f"+ Blogger 제목 {len(blogger_titles)}개 로드"
+            f"+ Blogger 포스트 {len(blogger_posts)}개 로드"
         )
 
         topic_data = decide_topic(track, avoid_context, tool_name)
@@ -1001,7 +1193,11 @@ def main():
         image_b64    = generate_thumbnail(image_prompt)
         image_url    = upload_image_to_imgur(image_b64)
 
-        blog_url = post_to_blogger(best_title, post_data, image_url)
+        blog_url = post_to_blogger(
+            best_title, post_data, image_url,
+            blogger_posts=blogger_posts,
+            track=track,
+        )
 
         # ✅ v6.6.0: tool 필드 누락 방지 — news 트랙 fallback 처리
         tool_for_history = (
