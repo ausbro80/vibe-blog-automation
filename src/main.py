@@ -43,6 +43,10 @@ GEMINI_API_KEY     = os.environ["GEMINI_API_KEY"]
 BLOGGER_BLOG_ID    = os.environ["BLOGGER_BLOG_ID"]
 GOOGLE_CREDENTIALS = os.environ["GOOGLE_CREDENTIALS_JSON"]
 
+# v6.7.1: workflow_dispatch의 dry_run 입력 처리.
+# true 면 Blogger는 isDraft=True (URL 비공개), 인스타/유튜브/Threads 전체 스킵.
+DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
+
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 HISTORY_FILE = Path("posted_history.json")
@@ -141,8 +145,28 @@ def get_blocked_angles(history: dict) -> list[dict]:
     return blocked
 
 
+def get_today_tools(history: dict) -> set[str]:
+    """v6.7.1: 오늘 이미 다룬 툴 집합. 같은 날 중복 발행 절대 차단용."""
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    return {
+        (p.get("tool") or "").strip().lower()
+        for p in history["posts"]
+        if p["date"].startswith(today_str) and (p.get("tool") or "").strip()
+    }
+
+
 def build_date_block_section(history: dict) -> str:
     lines = ["## 🔒 날짜 기반 자동 차단 (코드 직접 계산 — AI 임의 해제 불가)\n"]
+
+    # v6.7.1: 같은 날 같은 도구 절대 차단 (Claude 재량 제거)
+    today_tools = get_today_tools(history)
+    if today_tools:
+        lines.append("### 🚫 오늘 이미 발행한 툴 — 절대 금지 (예외 0)")
+        for t in sorted(today_tools):
+            lines.append(f"  - {t}")
+        lines.append("  ※ 같은 날 같은 도구를 다른 각도로도 절대 다루지 말 것")
+        lines.append("  ※ '새로운 발표/연동/업데이트'라는 이유로도 예외 불가")
+        lines.append("  ※ 위 도구 중 하나라도 후보라면 즉시 다른 도구로 변경\n")
 
     blocked_tools = get_blocked_tools(history)
     if blocked_tools:
@@ -153,8 +177,9 @@ def build_date_block_section(history: dict) -> str:
             days_ago = (datetime.now() - datetime.strptime(last_date, "%Y-%m-%d %H:%M")).days
             lines.append(f"  - {tool} (마지막: {last_date}, {days_ago}일 전)")
         lines.append("")
-        lines.append("  ※ 단, 해당 툴의 완전히 새로운 기능 발표 / major 버전 출시 /")
-        lines.append("     서비스 종료 / 가격 정책 대규모 변경 등 어제와 다른 새 소식이면 허용")
+        lines.append("  ※ 단, 어제 이전(24시간 경과)이고 해당 툴의 완전히 새로운 기능 발표 /")
+        lines.append("     major 버전 출시 / 서비스 종료 / 가격 정책 대규모 변경 등")
+        lines.append("     어제와 다른 새 소식이면 허용 (오늘 이미 다룬 툴은 위 절대 금지 우선)")
         lines.append("  ※ '출시 소식'이라도 어제와 동일한 소식이면 차단 유지")
         lines.append("  ※ 예외 사용 시 reason 필드에 반드시 구체적 사유 명시\n")
     else:
@@ -541,6 +566,27 @@ JSON만 출력:
 """
 
     topic_data = call_claude(prompt, max_tokens=1200)
+
+    # v6.7.1: 코드 단계 안전망 — 오늘 이미 다룬 도구가 선택됐으면 즉시 재시도 (1회).
+    # 프롬프트가 강해도 가끔 Claude가 우회하므로 결정론적 차단을 추가.
+    history_for_check = load_history()
+    today_tools = get_today_tools(history_for_check)
+    chosen_tools = []
+    if topic_data.get("tool"):
+        chosen_tools.append(topic_data["tool"].strip().lower())
+    if topic_data.get("todays_pick_tool"):
+        chosen_tools.append(topic_data["todays_pick_tool"].strip().lower())
+    overlap = today_tools.intersection(set(chosen_tools))
+    if overlap:
+        log.warning(f"  🚫 오늘 이미 다룬 도구 선택됨: {overlap} → 강제 재시도")
+        retry_prompt = (
+            prompt
+            + f"\n\n## ⛔⛔⛔ 강제 재시도\n"
+            + f"방금 너는 {', '.join(overlap)} 를 선택했는데 이 도구는 오늘 이미 발행됐다.\n"
+            + "절대 같은 도구 선택 금지. 위 도구 우선순위 목록에서 다른 도구로 즉시 변경.\n"
+        )
+        topic_data = call_claude(retry_prompt, max_tokens=1200)
+
     log.info(f"  ✅ 결정된 주제: {topic_data['topic']}")
     log.info(f"  💡 선택 이유: {topic_data.get('reason', '')}")
     return topic_data
@@ -1132,10 +1178,13 @@ def post_to_blogger(
             "content": full_html,
             "labels": tags,
         },
-        isDraft=False,
+        isDraft=DRY_RUN,  # v6.7.1: dry-run이면 초안으로만 저장 (공개 URL 노출 X)
     ).execute()
     post_url = result.get("url", "URL 없음")
-    log.info(f"  ✅ 포스팅 완료: {post_url}")
+    if DRY_RUN:
+        log.info(f"  🧪 DRY_RUN 초안 저장 완료 (공개 안 됨): {post_url}")
+    else:
+        log.info(f"  ✅ 포스팅 완료: {post_url}")
     return post_url
 
 
@@ -1144,10 +1193,12 @@ def post_to_blogger(
 # ═════════════════════════════════════════════════════════════════════════════
 def main():
     log.info("=" * 60)
-    log.info("🚀 바이브코딩 스쿨 자동화 시작 (v6.6.0)")
+    log.info("🚀 바이브코딩 스쿨 자동화 시작 (v6.7.1)")
     log.info(f"   날짜: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     log.info(f"   현재 연도: {datetime.now().year}년 (고정)")
     log.info(f"   영구 차단: {', '.join(PERMANENT_BLOCK) if PERMANENT_BLOCK else '없음'}")
+    if DRY_RUN:
+        log.info("   🧪 DRY_RUN 모드: Blogger=초안 저장, 인스타/유튜브/Threads 전체 스킵")
     log.info("=" * 60)
 
     try:
@@ -1218,44 +1269,47 @@ def main():
         log.info(f"  ✅ 히스토리 업데이트 완료 (tool: {tool_for_history or '미확정'})")
 
         card_image_urls = []
-        try:
-            from instagram import post_instagram
-            insta_url, card_image_urls = post_instagram(
-                blog_title=best_title,
-                blog_content_html=post_data["content_html"],
-                tags=post_data.get("tags", []),
-            )
-            log.info(f"  📸 인스타 포스팅 완료: {insta_url}")
-        except Exception as e:
-            log.warning(f"  ⚠️ 인스타 포스팅 실패: {e}")
+        if DRY_RUN:
+            log.info("  🧪 DRY_RUN: 인스타/유튜브/Threads 전체 스킵")
+        else:
+            try:
+                from instagram import post_instagram
+                insta_url, card_image_urls = post_instagram(
+                    blog_title=best_title,
+                    blog_content_html=post_data["content_html"],
+                    tags=post_data.get("tags", []),
+                )
+                log.info(f"  📸 인스타 포스팅 완료: {insta_url}")
+            except Exception as e:
+                log.warning(f"  ⚠️ 인스타 포스팅 실패: {e}")
 
-        try:
-            from youtube_shorts import post_youtube_shorts
-            youtube_url = post_youtube_shorts(
-                title=best_title,
-                content_html=post_data["content_html"],
-                blog_url=blog_url,
-                card_image_urls=card_image_urls,
-            )
-            if youtube_url:
-                log.info(f"  🎬 유튜브 쇼츠 완료: {youtube_url}")
-        except Exception as e:
-            log.warning(f"  ⚠️ 유튜브 쇼츠 실패: {e}")
+            try:
+                from youtube_shorts import post_youtube_shorts
+                youtube_url = post_youtube_shorts(
+                    title=best_title,
+                    content_html=post_data["content_html"],
+                    blog_url=blog_url,
+                    card_image_urls=card_image_urls,
+                )
+                if youtube_url:
+                    log.info(f"  🎬 유튜브 쇼츠 완료: {youtube_url}")
+            except Exception as e:
+                log.warning(f"  ⚠️ 유튜브 쇼츠 실패: {e}")
 
-        try:
-            from threads import post_threads
-            threads_url = post_threads(
-                blog_title=best_title,
-                blog_content_html=post_data["content_html"],
-                blog_url=blog_url,
-                tags=post_data.get("tags", []),
-                track=track,
-                image_url=image_url,
-            )
-            if threads_url:
-                log.info(f"  🧵 Threads 포스팅 완료: {threads_url}")
-        except Exception as e:
-            log.warning(f"  ⚠️ Threads 포스팅 실패: {e}")
+            try:
+                from threads import post_threads
+                threads_url = post_threads(
+                    blog_title=best_title,
+                    blog_content_html=post_data["content_html"],
+                    blog_url=blog_url,
+                    tags=post_data.get("tags", []),
+                    track=track,
+                    image_url=image_url,
+                )
+                if threads_url:
+                    log.info(f"  🧵 Threads 포스팅 완료: {threads_url}")
+            except Exception as e:
+                log.warning(f"  ⚠️ Threads 포스팅 실패: {e}")
 
         log.info("=" * 60)
         log.info("🎉 전체 파이프라인 완료!")
