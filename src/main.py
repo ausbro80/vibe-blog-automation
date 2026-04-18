@@ -787,7 +787,7 @@ def generate_post(track: str, topic_data: dict, deep_news: str) -> dict:
 - 마크다운 절대 금지, 굵게는 <strong> 태그
 - 완성된 HTML만 출력
 """
-    content_html = call_claude_raw(html_prompt, max_tokens=5000)
+    content_html = call_claude_raw(html_prompt, max_tokens=7000)
 
     if content_html.startswith("```"):
         lines = content_html.split("\n")

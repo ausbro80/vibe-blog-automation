@@ -52,17 +52,28 @@ jobs:
           DRY_RUN:                  ${{ inputs.dry_run || 'false' }}
         run: python src/main.py
       - name: 중복 방지 히스토리 저장
+        if: always()
         run: |
           git config user.email "action@github.com"
           git config user.name "GitHub Action"
-          git pull --rebase origin main
+          # 1) 변경 파일을 먼저 stage (rebase 전에 unstaged 상태가 없도록)
           [ -f src/posted_history.json ] && git add src/posted_history.json || true
-          git diff --staged --quiet || git commit -m "chore: update posted_history [skip ci]"
-          git push || true
+          # 2) stage된 변경이 있을 때만 commit → rebase → push
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: update posted_history [skip ci]"
+            git pull --rebase origin main || true
+            git push || true
+          else
+            echo "변경 없음 — skip"
+          fi
       - name: 저장소 활성 유지
+        if: always()
         run: |
           git config user.email "action@github.com"
           git config user.name "GitHub Action"
-          git pull --rebase origin main
+          # 잔여 unstaged 변경이 있다면 정리 (rebase 충돌 방지)
+          git stash --include-untracked || true
+          git pull --rebase origin main || true
+          git stash drop || true
           git commit --allow-empty -m "keep alive $(date '+%Y-%m-%d %H:%M')"
-          git push
+          git push || true
