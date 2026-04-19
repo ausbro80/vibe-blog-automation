@@ -13,6 +13,13 @@
       "topic": "Claude Opus 4.7 정식 출시와 Perplexity Personal Computer Mac 앱 등 AI 코딩 도구 메이저 업데이트 소식",
       "tool": "Claude",
       "track": "news"
+    },
+    {
+      "date": "2026-04-19 12:46",
+      "title": "AI 코딩 도구 연동법: Replit Agent + GitHub Copilot Workspace로 30분 만에 풀스택 앱 만들기 (2026)",
+      "topic": "Replit Agent와 GitHub Copilot Workspace 연동으로 풀스택 앱을 30분 만에 배포하는 실전 워크플로우",
+      "tool": "Replit Agent",
+      "track": "edu"
     }
   ]
 }
