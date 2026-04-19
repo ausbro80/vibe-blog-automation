@@ -6,6 +6,13 @@
       "topic": "Factory.ai 자율 코딩 에이전트로 이슈부터 PR까지 완전 자동화하는 실전 워크플로우",
       "tool": "Factory.ai",
       "track": "edu"
+    },
+    {
+      "date": "2026-04-19 03:31",
+      "title": "AI 코딩 도구 최신 동향 - Claude, Perplexity 업데이트 (2026)",
+      "topic": "Claude Opus 4.7 정식 출시와 Perplexity Personal Computer Mac 앱 등 AI 코딩 도구 메이저 업데이트 소식",
+      "tool": "Claude",
+      "track": "news"
     }
   ]
 }
