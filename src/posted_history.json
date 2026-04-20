@@ -27,6 +27,13 @@
       "topic": "AI 코딩 도구 대격변 - ChatGPT Pro 3단계 요금제, Genkit Go 1.0 정식 출시, Google Veo 4K 지원 확대",
       "tool": "ChatGPT",
       "track": "news"
+    },
+    {
+      "date": "2026-04-20 13:15",
+      "title": "Google Stitch MCP + Claude Code 자동 앱 개발 완벽 가이드 (2026)",
+      "topic": "Google Stitch MCP Server와 Claude Code 연동을 통한 디자인-코드 자동변환 워크플로우",
+      "tool": "Google Stitch",
+      "track": "tool"
     }
   ]
 }
