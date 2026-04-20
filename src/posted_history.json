@@ -20,6 +20,13 @@
       "topic": "Replit Agent와 GitHub Copilot Workspace 연동으로 풀스택 앱을 30분 만에 배포하는 실전 워크플로우",
       "tool": "Replit Agent",
       "track": "edu"
+    },
+    {
+      "date": "2026-04-20 03:33",
+      "title": "ChatGPT Pro $100/$200 분리와 Firebase Genkit Go 1.0 출시 소식 (2026)",
+      "topic": "AI 코딩 도구 대격변 - ChatGPT Pro 3단계 요금제, Genkit Go 1.0 정식 출시, Google Veo 4K 지원 확대",
+      "tool": "ChatGPT",
+      "track": "news"
     }
   ]
 }
