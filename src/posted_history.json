@@ -34,6 +34,13 @@
       "topic": "Google Stitch MCP Server와 Claude Code 연동을 통한 디자인-코드 자동변환 워크플로우",
       "tool": "Google Stitch",
       "track": "tool"
+    },
+    {
+      "date": "2026-04-21 03:05",
+      "title": "Perplexity API 에이전트 플랫폼 진화와 Claude Code 업데이트 소식 (2026)",
+      "topic": "Perplexity AI 에이전트 플랫폼 대규모 업그레이드와 AI 코딩 도구들의 새로운 전환점",
+      "tool": "Perplexity",
+      "track": "news"
     }
   ]
 }
