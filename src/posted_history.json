@@ -41,6 +41,13 @@
       "topic": "Perplexity AI 에이전트 플랫폼 대규모 업그레이드와 AI 코딩 도구들의 새로운 전환점",
       "tool": "Perplexity",
       "track": "news"
+    },
+    {
+      "date": "2026-04-22 03:26",
+      "title": "Claude Opus 4.7 SWE-bench Verified 87.6% 달성 및 이미지 해상도 2576px 향상 외 3가지 AI 뉴스 (2026)",
+      "topic": "Claude Opus 4.7 SWE-bench 87.6% 달성과 Google Veo 3.1 Lite 비용 효율화 업데이트",
+      "tool": "Claude",
+      "track": "news"
     }
   ]
 }
