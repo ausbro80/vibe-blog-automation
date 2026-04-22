@@ -48,6 +48,13 @@
       "topic": "Claude Opus 4.7 SWE-bench 87.6% 달성과 Google Veo 3.1 Lite 비용 효율화 업데이트",
       "tool": "Claude",
       "track": "news"
+    },
+    {
+      "date": "2026-04-22 13:09",
+      "title": "Firebase Genkit Go 1.0 프로덕션 배포 방법과 Gemini 2.5 Flash 업그레이드 실전 가이드 (2026)",
+      "topic": "Firebase Genkit Go 1.0 정식 출시와 Gemini 2.5 Flash 마이그레이션 가이드",
+      "tool": "Firebase Genkit",
+      "track": "tool"
     }
   ]
 }
