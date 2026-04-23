@@ -62,6 +62,13 @@
       "topic": "Google AI Studio Deep Research 에이전트 확대와 Veo 4K 업그레이드 소식",
       "tool": "Google AI Studio",
       "track": "news"
+    },
+    {
+      "date": "2026-04-23 13:09",
+      "title": "Lindy.ai Make.com HTTP 연결로 AI 자율 에이전트 만들기 5단계 (2026)",
+      "topic": "Lindy.ai와 Make.com HTTP 모듈로 자율 에이전트 워크플로우 구축하기 - 디지털 직원 자동화 실전 가이드",
+      "tool": "Lindy.ai",
+      "track": "edu"
     }
   ]
 }
