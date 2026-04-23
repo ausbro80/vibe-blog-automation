@@ -55,6 +55,13 @@
       "topic": "Firebase Genkit Go 1.0 정식 출시와 Gemini 2.5 Flash 마이그레이션 가이드",
       "tool": "Firebase Genkit",
       "track": "tool"
+    },
+    {
+      "date": "2026-04-23 03:26",
+      "title": "Google AI Studio Deep Research 공개 - DeepSearchQA 66.1%→93.3% 성능 개선 (2026)",
+      "topic": "Google AI Studio Deep Research 에이전트 확대와 Veo 4K 업그레이드 소식",
+      "tool": "Google AI Studio",
+      "track": "news"
     }
   ]
 }
