@@ -69,6 +69,13 @@
       "topic": "Lindy.ai와 Make.com HTTP 모듈로 자율 에이전트 워크플로우 구축하기 - 디지털 직원 자동화 실전 가이드",
       "tool": "Lindy.ai",
       "track": "edu"
+    },
+    {
+      "date": "2026-04-24 03:29",
+      "title": "AI 코딩 도구 4대 뉴스: GPT-5.5, Claude Code, Gemini 3.1, Perplexity (2026)",
+      "topic": "GPT-5.5 출시와 AI 코딩 도구 가격 정책 대변화 - 2026년 4월 24일",
+      "tool": "ChatGPT",
+      "track": "news"
     }
   ]
 }
