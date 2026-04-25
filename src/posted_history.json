@@ -90,6 +90,13 @@
       "topic": "Claude Design 출시와 OpenAI GPT-5.5 가격 2배 인상 등 AI 코딩 툴계 변화",
       "tool": "Claude Design",
       "track": "news"
+    },
+    {
+      "date": "2026-04-25 12:48",
+      "title": "Cursor 3.2와 Codex CLI로 30분만에 풀스택 앱 개발부터 배포까지 완성하는 5단계 방법 (2026)",
+      "topic": "Cursor와 ChatGPT Codex CLI 멀티툴 조합으로 풀스택 앱을 30분 만에 배포까지 완료하는 2026년 최신 워크플로우",
+      "tool": "Cursor + ChatGPT Codex CLI",
+      "track": "edu"
     }
   ]
 }
