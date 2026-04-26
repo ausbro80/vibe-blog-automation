@@ -104,6 +104,13 @@
       "topic": "AI 코딩 도구 5대 뉴스: Claude Code 품질 문제 해결, GPT-5.5 모델 출시, Perplexity Personal Computer Mac 확장",
       "tool": "Claude Code",
       "track": "news"
+    },
+    {
+      "date": "2026-04-26 12:50",
+      "title": "Perplexity Search Pro API와 Claude 3.5 Sonnet 연동으로 실시간 데이터 기반 AI 에이전트 구축하기 (2026)",
+      "topic": "Perplexity Search Pro API와 Claude 3.5 Sonnet 연동으로 실시간 데이터 기반 AI 에이전트 구축하기",
+      "tool": "Perplexity",
+      "track": "tool"
     }
   ]
 }
