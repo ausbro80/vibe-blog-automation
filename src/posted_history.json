@@ -97,6 +97,13 @@
       "topic": "Cursor와 ChatGPT Codex CLI 멀티툴 조합으로 풀스택 앱을 30분 만에 배포까지 완료하는 2026년 최신 워크플로우",
       "tool": "Cursor + ChatGPT Codex CLI",
       "track": "edu"
+    },
+    {
+      "date": "2026-04-26 03:35",
+      "title": "Claude Code 복원부터 GPT-5.5까지 - 4월 AI 코딩 도구 업데이트 총정리 (2026)",
+      "topic": "AI 코딩 도구 5대 뉴스: Claude Code 품질 문제 해결, GPT-5.5 모델 출시, Perplexity Personal Computer Mac 확장",
+      "tool": "Claude Code",
+      "track": "news"
     }
   ]
 }
