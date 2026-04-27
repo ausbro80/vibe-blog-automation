@@ -118,6 +118,13 @@
       "topic": "Google Veo 4K 해상도 업데이트와 OpenAI 가격 정책 변경으로 본 AI 코딩 도구 경쟁 심화",
       "tool": "Google Veo",
       "track": "news"
+    },
+    {
+      "date": "2026-04-27 13:26",
+      "title": "DESIGN.md 파일 하나로 디자인-개발 연결하는 Google Stitch 워크플로우 가이드 (2026)",
+      "topic": "DESIGN.md 워크플로우로 AI 디자인-개발 연결 자동화하기 - Google Stitch에서 Claude Code까지 23분 풀스택 완성법",
+      "tool": "Google Stitch + Claude Code",
+      "track": "edu"
     }
   ]
 }
