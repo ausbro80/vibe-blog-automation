@@ -111,6 +111,13 @@
       "topic": "Perplexity Search Pro API와 Claude 3.5 Sonnet 연동으로 실시간 데이터 기반 AI 에이전트 구축하기",
       "tool": "Perplexity",
       "track": "tool"
+    },
+    {
+      "date": "2026-04-27 03:40",
+      "title": "AI 코딩 뉴스 브리핑 - Google Veo 4K 지원과 OpenAI 가격 인상 (2026)",
+      "topic": "Google Veo 4K 해상도 업데이트와 OpenAI 가격 정책 변경으로 본 AI 코딩 도구 경쟁 심화",
+      "tool": "Google Veo",
+      "track": "news"
     }
   ]
 }
