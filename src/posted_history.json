@@ -132,6 +132,13 @@
       "topic": "Claude Cowork Amazon Bedrock 정식 출시와 GPT-5.5 API 가격 정책 변화",
       "tool": "Claude Cowork",
       "track": "news"
+    },
+    {
+      "date": "2026-04-28 13:36",
+      "title": "Firebase Genkit과 Gemini 2.5 Pro로 실시간 AI 에이전트 만드는 6단계 가이드 (2026)",
+      "topic": "Firebase Genkit과 Gemini 2.5 Pro 통합으로 실시간 AI 에이전트 구축하기",
+      "tool": "Firebase Genkit",
+      "track": "tool"
     }
   ]
 }
