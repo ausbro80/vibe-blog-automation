@@ -125,6 +125,13 @@
       "topic": "DESIGN.md 워크플로우로 AI 디자인-개발 연결 자동화하기 - Google Stitch에서 Claude Code까지 23분 풀스택 완성법",
       "tool": "Google Stitch + Claude Code",
       "track": "edu"
+    },
+    {
+      "date": "2026-04-28 04:45",
+      "title": "Claude Cowork Bedrock 지원 시작, GPT-5.5 토큰당 가격 $5→$30 인상 (2026)",
+      "topic": "Claude Cowork Amazon Bedrock 정식 출시와 GPT-5.5 API 가격 정책 변화",
+      "tool": "Claude Cowork",
+      "track": "news"
     }
   ]
 }
