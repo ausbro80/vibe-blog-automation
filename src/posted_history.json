@@ -146,6 +146,13 @@
       "topic": "Claude Code VS Code Remote Control 추가와 Anthropic 창작 도구 커넥터 9개 출시 소식",
       "tool": "Claude Code",
       "track": "news"
+    },
+    {
+      "date": "2026-04-29 13:31",
+      "title": "Mistral AI Workflows와 Make.com 연결로 크래시 없는 AI 자동화 구축하기 (2026)",
+      "topic": "Mistral AI Workflows와 Make.com으로 내구성 있는 AI 에이전트 자동화 파이프라인 구축하기",
+      "tool": "Mistral AI Workflows",
+      "track": "edu"
     }
   ]
 }
