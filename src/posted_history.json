@@ -139,6 +139,13 @@
       "topic": "Firebase Genkit과 Gemini 2.5 Pro 통합으로 실시간 AI 에이전트 구축하기",
       "tool": "Firebase Genkit",
       "track": "tool"
+    },
+    {
+      "date": "2026-04-29 03:42",
+      "title": "Claude Code VS Code 원격 제어 기능과 창작자용 커넥터 출시 등 AI 코딩 뉴스 (2026)",
+      "topic": "Claude Code VS Code Remote Control 추가와 Anthropic 창작 도구 커넥터 9개 출시 소식",
+      "tool": "Claude Code",
+      "track": "news"
     }
   ]
 }
