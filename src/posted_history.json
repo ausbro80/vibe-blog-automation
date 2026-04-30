@@ -160,6 +160,13 @@
       "topic": "OpenAI 월 8달러 플랜 출시와 광고 사업 확장으로 AI 코딩 도구 시장 가격 경쟁 가속화",
       "tool": "ChatGPT",
       "track": "news"
+    },
+    {
+      "date": "2026-04-30 13:29",
+      "title": "Antigravity IDE Google AI Studio 통합으로 멀티 에이전트 개발 완전 자동화 (2026)",
+      "topic": "Antigravity IDE와 Google AI Studio 통합으로 바뀌는 AI 개발 환경",
+      "tool": "Antigravity",
+      "track": "tool"
     }
   ]
 }
