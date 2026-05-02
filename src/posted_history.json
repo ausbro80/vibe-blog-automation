@@ -188,6 +188,13 @@
       "topic": "Claude Code 대규모 업데이트와 Claude Security 베타 출시로 본 AI 코딩 보안 생태계 변화",
       "tool": "Claude Security",
       "track": "news"
+    },
+    {
+      "date": "2026-05-02 12:54",
+      "title": "Perplexity Pro API 대규모 업데이트와 새로운 실시간 검색 기능 활용법 (2026)",
+      "topic": "Perplexity Pro API 대규모 업데이트와 새로운 실시간 검색 기능 활용법",
+      "tool": "Perplexity",
+      "track": "tool"
     }
   ]
 }
