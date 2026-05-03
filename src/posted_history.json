@@ -202,6 +202,13 @@
       "topic": "Claude Code VS Code 원격 제어와 GPT-5.5 에이전틱 코딩 등 AI 개발 도구 3대 업데이트 소식",
       "tool": "Claude Code",
       "track": "news"
+    },
+    {
+      "date": "2026-05-03 12:53",
+      "title": "Windsurf AI Zapier 연동으로 개발 워크플로 완전 자동화하는 방법 (2026)",
+      "topic": "Windsurf AI와 Zapier 연동으로 코드 생성부터 배포 알림까지 완전 자동화하는 실전 워크플로우",
+      "tool": "Windsurf AI",
+      "track": "edu"
     }
   ]
 }
