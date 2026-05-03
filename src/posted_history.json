@@ -195,6 +195,13 @@
       "topic": "Perplexity Pro API 대규모 업데이트와 새로운 실시간 검색 기능 활용법",
       "tool": "Perplexity",
       "track": "tool"
+    },
+    {
+      "date": "2026-05-03 03:48",
+      "title": "Claude Code VS Code 원격제어와 GPT-5.5 에이전틱 기능 완벽 분석 (2026)",
+      "topic": "Claude Code VS Code 원격 제어와 GPT-5.5 에이전틱 코딩 등 AI 개발 도구 3대 업데이트 소식",
+      "tool": "Claude Code",
+      "track": "news"
     }
   ]
 }
