@@ -216,6 +216,13 @@
       "topic": "Google Veo 4K 지원과 OpenAI GPT-5.5 출시로 AI 콘텐츠 제작 도구 경쟁 심화",
       "tool": "Google Veo",
       "track": "news"
+    },
+    {
+      "date": "2026-05-04 13:30",
+      "title": "Google Stitch DESIGN.md 파일로 AI 디자인 시스템 구축하기 (2026)",
+      "topic": "Google Stitch DESIGN.md 파일과 MCP 서버 연동으로 AI 디자인 시스템 구축하기",
+      "tool": "Google Stitch",
+      "track": "tool"
     }
   ]
 }
