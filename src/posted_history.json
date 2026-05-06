@@ -230,6 +230,13 @@
       "topic": "OpenAI GPT-5.5 출시와 ChatGPT Business 가격 인하로 AI 코딩 시장 재편",
       "tool": "ChatGPT",
       "track": "news"
+    },
+    {
+      "date": "2026-05-06 03:41",
+      "title": "Anthropic Managed Agents와 GPT-5.5 출시로 변화하는 AI 에이전트 환경 (2026)",
+      "topic": "Anthropic Managed Agents 공개 베타 출시로 달라지는 AI 에이전트 호스팅 환경",
+      "tool": "Anthropic Managed Agents",
+      "track": "news"
     }
   ]
 }
