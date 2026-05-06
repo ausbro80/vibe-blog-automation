@@ -237,6 +237,13 @@
       "topic": "Anthropic Managed Agents 공개 베타 출시로 달라지는 AI 에이전트 호스팅 환경",
       "tool": "Anthropic Managed Agents",
       "track": "news"
+    },
+    {
+      "date": "2026-05-06 13:37",
+      "title": "Firebase Genkit Python 1.0 완벽 가이드 - Gemini 2.5 Flash 연동 방법 (2026)",
+      "topic": "Firebase Genkit Python SDK 1.0 메이저 릴리스와 Gemini 2.5 Flash 모델 업그레이드로 달라진 AI 앱 개발",
+      "tool": "Firebase Genkit",
+      "track": "tool"
     }
   ]
 }
