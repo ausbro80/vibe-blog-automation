@@ -251,6 +251,13 @@
       "topic": "Claude Cowork 기업 배포 본격화와 Gemini 3.1 실시간 대화 API 출시로 AI 협업 도구 경쟁 심화",
       "tool": "Claude Cowork",
       "track": "news"
+    },
+    {
+      "date": "2026-05-07 13:35",
+      "title": "Replit Agent 4로 30분만에 실시간 채팅앱 만들기 (2026)",
+      "topic": "Replit Agent와 Supabase 연동으로 30분만에 실시간 채팅 앱 만들기 - 데이터베이스 설정부터 배포까지",
+      "tool": "Replit Agent",
+      "track": "edu"
     }
   ]
 }
