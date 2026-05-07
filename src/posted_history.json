@@ -244,6 +244,13 @@
       "topic": "Firebase Genkit Python SDK 1.0 메이저 릴리스와 Gemini 2.5 Flash 모델 업그레이드로 달라진 AI 앱 개발",
       "tool": "Firebase Genkit",
       "track": "tool"
+    },
+    {
+      "date": "2026-05-07 03:44",
+      "title": "AI 코딩 뉴스 브리핑 - Claude API 17배 증가와 금융 에이전트 템플릿 (2026)",
+      "topic": "Claude Cowork 기업 배포 본격화와 Gemini 3.1 실시간 대화 API 출시로 AI 협업 도구 경쟁 심화",
+      "tool": "Claude Cowork",
+      "track": "news"
     }
   ]
 }
