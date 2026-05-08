@@ -258,6 +258,13 @@
       "topic": "Replit Agent와 Supabase 연동으로 30분만에 실시간 채팅 앱 만들기 - 데이터베이스 설정부터 배포까지",
       "tool": "Replit Agent",
       "track": "edu"
+    },
+    {
+      "date": "2026-05-08 03:39",
+      "title": "Perplexity Mac 전용 앱 출시로 Command Bar 통합 AI 작업 환경 구축하는 방법 (2026)",
+      "topic": "Perplexity Mac 전용 Personal Computer 앱 출시와 API 플랫폼 확장으로 AI 에이전트 생태계 혁신",
+      "tool": "Perplexity",
+      "track": "news"
     }
   ]
 }
