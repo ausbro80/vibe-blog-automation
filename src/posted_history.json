@@ -265,6 +265,13 @@
       "topic": "Perplexity Mac 전용 Personal Computer 앱 출시와 API 플랫폼 확장으로 AI 에이전트 생태계 혁신",
       "tool": "Perplexity",
       "track": "news"
+    },
+    {
+      "date": "2026-05-08 13:17",
+      "title": "Claude Code Auto Mode 완전 정복 - 다중 보안 체계로 안전한 자동 코딩 (2026)",
+      "topic": "Claude Code 자동 모드 연구 프리뷰 출시로 권한 프롬프트 자동 처리하는 새로운 AI 코딩 환경",
+      "tool": "Claude Code",
+      "track": "tool"
     }
   ]
 }
