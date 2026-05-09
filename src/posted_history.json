@@ -272,6 +272,13 @@
       "topic": "Claude Code 자동 모드 연구 프리뷰 출시로 권한 프롬프트 자동 처리하는 새로운 AI 코딩 환경",
       "tool": "Claude Code",
       "track": "tool"
+    },
+    {
+      "date": "2026-05-09 03:39",
+      "title": "GPT-5.5 정식 출시와 272K 토큰 차등 과금제 대응 가이드 (2026)",
+      "topic": "GPT-5.5 정식 출시와 Veo 3.1 Lite가 가져온 AI 코딩 환경의 새로운 전환점",
+      "tool": "ChatGPT",
+      "track": "news"
     }
   ]
 }
