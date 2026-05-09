@@ -279,6 +279,13 @@
       "topic": "GPT-5.5 정식 출시와 Veo 3.1 Lite가 가져온 AI 코딩 환경의 새로운 전환점",
       "tool": "ChatGPT",
       "track": "news"
+    },
+    {
+      "date": "2026-05-09 13:02",
+      "title": "CVE-2026-26268 Cursor IDE 취약점 분석과 AI 개발환경 보안 체크리스트 5단계 (2026)",
+      "topic": "Cursor IDE 보안 취약점 패치 이후 AI 코딩 환경 보안 강화 가이드",
+      "tool": "Cursor IDE",
+      "track": "edu"
     }
   ]
 }
