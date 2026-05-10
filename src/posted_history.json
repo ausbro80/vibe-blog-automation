@@ -286,6 +286,13 @@
       "topic": "Cursor IDE 보안 취약점 패치 이후 AI 코딩 환경 보안 강화 가이드",
       "tool": "Cursor IDE",
       "track": "edu"
+    },
+    {
+      "date": "2026-05-10 03:51",
+      "title": "Claude Cowork 금융 에이전트 템플릿 10개로 피치북·KYC 작업 자동화하기 (2026)",
+      "topic": "Claude Cowork 금융 에이전트 템플릿 출시와 Perplexity Computer 자율 에이전트 등 AI 툴 대규모 업데이트",
+      "tool": "Claude Cowork",
+      "track": "news"
     }
   ]
 }
