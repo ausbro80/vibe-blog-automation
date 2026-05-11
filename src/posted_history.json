@@ -300,6 +300,13 @@
       "topic": "Google Stitch MCP 서버와 A2A 에이전트 통합으로 AI 디자인 워크플로우 완전 자동화",
       "tool": "Google Stitch",
       "track": "tool"
+    },
+    {
+      "date": "2026-05-11 04:05",
+      "title": "Google AI 대폭 업데이트: Veo 4K + Gemini Flash-Lite로 비용 효율성 극대화 - 세로형 비디오 제작 5단계 가이드 (2026)",
+      "topic": "Google Veo 4K 해상도 지원 확대와 Gemini 3.1 Flash-Lite 출시로 AI 비디오-언어 모델 경쟁 격화",
+      "tool": "Google Veo",
+      "track": "news"
     }
   ]
 }
