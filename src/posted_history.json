@@ -321,6 +321,13 @@
       "topic": "Genkit Go 1.0 정식 출시와 Anthropic Claude Cowork 엔터프라이즈 기능 대폭 강화",
       "tool": "Firebase Genkit",
       "track": "news"
+    },
+    {
+      "date": "2026-05-12 14:12",
+      "title": "구글 Gemini 2.5 업데이트 핵심 변경사항 3가지 정리 (2026)",
+      "topic": "Gemini 2.5 Pro API 대규모 업데이트와 실시간 함수 호출 기능으로 AI 에이전트 개발 환경 혁신",
+      "tool": "Gemini 2.5 Pro",
+      "track": "tool"
     }
   ]
 }
