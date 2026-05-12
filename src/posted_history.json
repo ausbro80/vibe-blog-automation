@@ -314,6 +314,13 @@
       "topic": "세일즈포스 에이전트포스와 n8n 워크플로우 연동으로 기업 업무 자동화 파이프라인 구축하기",
       "tool": "Salesforce Agentforce Operations",
       "track": "edu"
+    },
+    {
+      "date": "2026-05-12 03:47",
+      "title": "Google Firebase Genkit Go 1.0 정식 출시! AI 개발 프레임워크와 오늘의 AI 뉴스 (2026)",
+      "topic": "Genkit Go 1.0 정식 출시와 Anthropic Claude Cowork 엔터프라이즈 기능 대폭 강화",
+      "tool": "Firebase Genkit",
+      "track": "news"
     }
   ]
 }
