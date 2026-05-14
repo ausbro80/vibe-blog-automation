@@ -328,6 +328,13 @@
       "topic": "Gemini 2.5 Pro API 대규모 업데이트와 실시간 함수 호출 기능으로 AI 에이전트 개발 환경 혁신",
       "tool": "Gemini 2.5 Pro",
       "track": "tool"
+    },
+    {
+      "date": "2026-05-14 13:54",
+      "title": "Cursor 3 병렬 에이전트 플릿 핵심 변화와 실전 가이드 (2026)",
+      "topic": "Cursor 3 에이전트 창 중심 재구축과 플릿 병렬 실행 기능",
+      "tool": "Cursor",
+      "track": "tool"
     }
   ]
 }
