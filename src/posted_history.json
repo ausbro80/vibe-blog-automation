@@ -335,6 +335,13 @@
       "topic": "Cursor 3 에이전트 창 중심 재구축과 플릿 병렬 실행 기능",
       "tool": "Cursor",
       "track": "tool"
+    },
+    {
+      "date": "2026-05-15 04:01",
+      "title": "Claude Code 에이전트 뷰로 다중 AI 관리하는 방법 5단계 (2026)",
+      "topic": "Claude 에이전트 뷰 출시와 AWS 플랫폼 확장으로 AI 코딩 도구 대격변",
+      "tool": "Claude Code",
+      "track": "news"
     }
   ]
 }
