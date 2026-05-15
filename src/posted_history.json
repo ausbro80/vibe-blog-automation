@@ -342,6 +342,13 @@
       "topic": "Claude 에이전트 뷰 출시와 AWS 플랫폼 확장으로 AI 코딩 도구 대격변",
       "tool": "Claude Code",
       "track": "news"
+    },
+    {
+      "date": "2026-05-15 13:39",
+      "title": "Notion AI 에이전트 워크플로우 구축 완벽 가이드 (2026)",
+      "topic": "Notion Developer Platform과 Workers로 AI 에이전트 워크플로우 자동화 구축하기",
+      "tool": "Notion Developer Platform",
+      "track": "edu"
     }
   ]
 }
