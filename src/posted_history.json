@@ -356,6 +356,13 @@
       "topic": "Perplexity API 플랫폼 대규모 업그레이드와 최신 AI 코딩 도구들의 주요 업데이트 소식",
       "tool": "Perplexity",
       "track": "news"
+    },
+    {
+      "date": "2026-05-16 13:06",
+      "title": "Google AI Studio Antigravity 통합으로 원클릭 AI 개발하는 방법 (2026)",
+      "topic": "Google AI Studio의 Antigravity 통합 활용과 Firebase Studio 마이그레이션 대응 전략",
+      "tool": "Google AI Studio + Antigravity",
+      "track": "tool"
     }
   ]
 }
