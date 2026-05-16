@@ -349,6 +349,13 @@
       "topic": "Notion Developer Platform과 Workers로 AI 에이전트 워크플로우 자동화 구축하기",
       "tool": "Notion Developer Platform",
       "track": "edu"
+    },
+    {
+      "date": "2026-05-16 03:42",
+      "title": "Perplexity API 플랫폼 전면 개편으로 AI 에이전트 구축 완전 자동화 (2026)",
+      "topic": "Perplexity API 플랫폼 대규모 업그레이드와 최신 AI 코딩 도구들의 주요 업데이트 소식",
+      "tool": "Perplexity",
+      "track": "news"
     }
   ]
 }
