@@ -370,6 +370,13 @@
       "topic": "ChatGPT Codex 가격 정책 변경과 OpenAI 토큰 기반 과금 체계 전환 소식",
       "tool": "ChatGPT",
       "track": "news"
+    },
+    {
+      "date": "2026-05-17 13:05",
+      "title": "n8n AI 에이전트로 멀티모달 콘텐츠 자동화 워크플로우 구축하기 - 5단계 가이드 (2026)",
+      "topic": "n8n AI 에이전트 워크플로우로 멀티모달 콘텐츠 자동 생성 시스템 구축하기",
+      "tool": "n8n",
+      "track": "edu"
     }
   ]
 }
