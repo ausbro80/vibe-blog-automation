@@ -363,6 +363,13 @@
       "topic": "Google AI Studio의 Antigravity 통합 활용과 Firebase Studio 마이그레이션 대응 전략",
       "tool": "Google AI Studio + Antigravity",
       "track": "tool"
+    },
+    {
+      "date": "2026-05-17 04:00",
+      "title": "ChatGPT 토큰 과금 시스템과 할인 혜택 총정리 - 5단계 가이드 (2026)",
+      "topic": "ChatGPT Codex 가격 정책 변경과 OpenAI 토큰 기반 과금 체계 전환 소식",
+      "tool": "ChatGPT",
+      "track": "news"
     }
   ]
 }
