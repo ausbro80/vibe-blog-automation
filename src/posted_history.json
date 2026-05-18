@@ -384,6 +384,13 @@
       "topic": "Anthropic PwC 파트너십 확대와 AI 코딩 도구들의 새로운 전환점",
       "tool": "Claude",
       "track": "news"
+    },
+    {
+      "date": "2026-05-18 15:04",
+      "title": "Firebase Genkit 2.0의 핵심 업데이트와 멀티모달 AI 개발 시작하기 (2026)",
+      "topic": "Firebase Genkit 2.0 GA 릴리스와 Gemini 3.2 Flash 통합으로 멀티모달 AI 플로우 구축하기",
+      "tool": "Firebase Genkit",
+      "track": "tool"
     }
   ]
 }
