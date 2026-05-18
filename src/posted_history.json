@@ -377,6 +377,13 @@
       "topic": "n8n AI 에이전트 워크플로우로 멀티모달 콘텐츠 자동 생성 시스템 구축하기",
       "tool": "n8n",
       "track": "edu"
+    },
+    {
+      "date": "2026-05-18 04:13",
+      "title": "AI 코딩 브리핑: Anthropic PwC 제휴로 법무 AI 도구 출시와 OpenAI 요금제 변화 정리 (2026)",
+      "topic": "Anthropic PwC 파트너십 확대와 AI 코딩 도구들의 새로운 전환점",
+      "tool": "Claude",
+      "track": "news"
     }
   ]
 }
