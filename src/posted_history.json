@@ -391,6 +391,13 @@
       "topic": "Firebase Genkit 2.0 GA 릴리스와 Gemini 3.2 Flash 통합으로 멀티모달 AI 플로우 구축하기",
       "tool": "Firebase Genkit",
       "track": "tool"
+    },
+    {
+      "date": "2026-05-19 04:07",
+      "title": "2026년 5월 AI 개발 트렌드: Google Gemini Omni 발표와 Claude Code 업데이트",
+      "topic": "Google I/O 2026과 Claude 대규모 업데이트로 AI 개발 생태계 전면 재편",
+      "tool": "Gemini Omni",
+      "track": "news"
     }
   ]
 }
