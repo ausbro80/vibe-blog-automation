@@ -412,6 +412,13 @@
       "topic": "Google I/O 2026 AI 개발 플랫폼 대폭 업데이트와 AI 툴 생태계 변화",
       "tool": "Gemini/Veo",
       "track": "news"
+    },
+    {
+      "date": "2026-05-20 15:01",
+      "title": "Google Antigravity 2.0 멀티 AI 에이전트 3가지 핵심 기능과 6단계 실전 가이드 (2026)",
+      "topic": "Google Antigravity 2.0 새로운 데스크톱 앱과 다중 AI 에이전트 오케스트레이션 기능",
+      "tool": "Google Antigravity",
+      "track": "tool"
     }
   ]
 }
