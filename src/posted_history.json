@@ -426,6 +426,13 @@
       "topic": "Perplexity Computer GPT-5.5 오케스트레이션과 Model Council 병렬 코딩 평가 시스템 출시",
       "tool": "Perplexity",
       "track": "news"
+    },
+    {
+      "date": "2026-05-21 14:49",
+      "title": "AI 코딩 생산성 3배 높이는 Windsurf-Claude 연동 설정법 5단계 (2026)",
+      "topic": "Windsurf Editor 2.5 업데이트로 Claude Code와 멀티 AI 에이전트 체인 구축하는 실전 가이드",
+      "tool": "Windsurf Editor",
+      "track": "edu"
     }
   ]
 }
